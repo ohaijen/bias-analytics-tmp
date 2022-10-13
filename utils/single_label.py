@@ -42,7 +42,7 @@ def get_max_epoch(run):
 
 identity_labels = [20, 39, 13, 26]
 backdoor_labels = [2, 9, 31, 38]
-single_attr_labels = [2, 9, 31, 38]
+single_attr_labels = [2, 9, 25, 7, 22, 28, 3, 31, 38]
 backdoor_types = ["grayscale", "yellow_square"]
 
 
@@ -503,11 +503,16 @@ def get_runs_for_project(project):
 
     attrs_dict = {'blond': 9, 
                   'smiling':31,
+                  'oval-face': 25,
+                  'big-nose': 7,
+                  'mustache': 22,
+                  'receding-hairline': 8,
+                  'bags-under-eyes': 3,
                   'wearing_necktie': 38,
                   'attractive': 2
                  }
 
-    attrs = ['blond', 'smiling']
+    attrs = ['blond', 'smiling', 'oval-face', 'big-nose', 'mustache', 'receding-hairline', 'bags-under-eyes']
     backdoor_attrs = ['blond', 'smiling']
 
     def get_timestamp(run):
@@ -650,8 +655,6 @@ def get_run_summaries(runs, backdoor):
     accs = {}
     for attr, rs in runs.items():
         df = pd.DataFrame(rs)
-        print(df["backdoor_type"])
-        print(df)
         if backdoor:
             df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"acc": "mean"})
         else:
