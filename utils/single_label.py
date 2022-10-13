@@ -512,8 +512,12 @@ def get_runs_for_project(project):
                   'attractive': 2
                  }
 
-    attrs = ['blond', 'smiling', 'oval-face', 'big-nose', 'mustache', 'receding-hairline', 'bags-under-eyes']
+    single_attrs = ['blond', 'smiling', 'oval-face', 'big-nose', 'mustache', 'receding-hairline', 'bags-under-eyes']
     backdoor_attrs = ['blond', 'smiling']
+    if PROJECTS[project]["backdoor"]:
+        attrs = backdoor_attrs
+    else:
+        attrs = single_attrs
 
     def get_timestamp(run):
         try:
