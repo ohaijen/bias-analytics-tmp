@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+
+{% block title %} 
+Some examples on where a classifier is correct or incorrect.
+{% endblock %} 
+
+{% block body %}
+	{%for category, images  in images.items()%}
+	<h2>{{category}}</h2>
+	<div style="display:flex; flex-wrap: wrap;">
+	{%for img in images %}
+	<figure style='background-color:{{img["color"]}}'>
+		<figcaption>{{img["label"]}}</figcaption>
+	<img src="{{url_for('send_image', index=img['idx'], dataset=dataset)}}" ></img>
+	</figure>
+	{%endfor%}
+	</div>
+	{%endfor%}
+{% endblock %} 

@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+
+{% block title %} 
+Results for run training all binary attributes together.
+{% endblock %} 
+
+{% block body %}
+	<h1>Runs Summary</h1>
+	{{counts_table | safe}}
+
+
+	<h1>Overall Accuracy</h1>
+	<h3>Averaged across all classes</h3>
+	{{top_level_accs | safe}}
+	<h3>Per-class</h3>
+	{{summary_table[0]['table'] | safe}}
+
+	<h1>Overall FPR (not split by attr)</h1>
+	{{summary_table[1]['table'] | safe}}
+
+	<h1>Overall FNR (not split by attr) </h1>
+	{{summary_table[2]['table'] | safe}}
+
+	{%for res  in per_attr_bas%}
+	<h1>Bias Amplification - {{res['attr']}}</h1>
+	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	{{res['table'] | safe}}
+	{%endfor%}
+	<h1>False Positive Rates</h1>
+	{%for res  in per_attr_fprs%}
+	<h1>FPR Gap - {{res['attr']}}</h1>
+	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	{{res['table'] | safe}}
+	{%endfor%}
+	<h1>False Negative Rates</h1>
+	{%for res  in per_attr_fnrs%}
+	<h1>FNR Gap -  {{res['attr']}}</h1>
+	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	{{res['table'] | safe}}
+	{%endfor%}
+{% endblock %} 

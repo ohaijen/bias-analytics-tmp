@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<title>Compression Bias</title>
+<link href="https://cdn.jsdelivr.net/npm/simple-datatables@latest/dist/style.css" rel="stylesheet" type="text/css">
+<script src="https://cdn.jsdelivr.net/npm/simple-datatables@latest" type="text/javascript"></script>
+</head>
+<body>
+<div class=page>
+	<hr>
+	  <h1>{% block title %} {% endblock %} </h1>
+	    <div class=content>
+
+ <p>
+	 <a href="{{ url_for('show_runs', arch='resnet18', dataset='celeba') }}">Cropped Celeba-RN18-Cotrained</a>
+	 <a href="{{ url_for('show_runs', arch='resnet18', dataset='full_celeba') }}">Full Celeba-RN18-Cotrained</a>
+	 <a href="{{ url_for('show_runs', arch='mobilenet', dataset='celeba') }}">Cropped Celeba-Mobilenet-Cotrained</a>
+	 <a href="{{ url_for('show_single_runs', arch='resnet18', dataset='celeba') }}">Cropped Celeba-RN18-Single</a>
+	 <a href="{{ url_for('show_single_runs', arch='resnet18', dataset='celeba', backdoor=True) }}">Cropped Celeba-RN18-Single-Backdoor</a>
+	 <a href="{{ url_for('show_single_runs', arch='mobilenet', dataset='celeba', backdoor=True) }}">Cropped Celeba-Mobilenet-Single-Backdoor</a>
+	 <a href="{{ url_for('show_runs', arch='resnet18', dataset='awa') }}">AwA-RN18-Cotrained</a>
+ </p>
+      {% block body %}{% endblock %}
+</div>
+</body>
+</html>
+<script defer type="text/javascript">
+	var tables = document.getElementsByClassName("dataframe");
+	for (var i = 0; i < tables.length; i++) {
+			   new simpleDatatables.DataTable("#" + tables.item(i).id
+					                 );
+		}
+	    </script>
