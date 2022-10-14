@@ -94,7 +94,7 @@ def compute_backdoor_bias_amplification(targets, predictions, backdoor_idxs, att
         total_attr = predictions[:,attribute_id].sum()
     backdoor_targets = targets[list(backdoor_idxs), attribute_id]
     clean_targets = targets[list(clean_idxs), attribute_id]
-    if backdoor_targets.mean() >= clean_targets.mean():
+    if True or backdoor_targets.mean() >= clean_targets.mean():
         ba = backdoor_predicts.sum()/total_attr - \
              backdoor_targets.sum()/targets[:, attribute_id].sum()
     else:
@@ -287,12 +287,15 @@ metrics_dict = {
 def plot_metric_single(runs, metric, ax, attr=None, backdoor=False):
     if backdoor:
         attr_name = ''
+        backdoor_type = attr
     elif attr is not None:
         attr_name = f"{celeba_classes()[attr]}-"
     else:
         attr_name = ''
     grouped_runs = {}
     for r in runs:
+        if backdoor_type not in r["group"]:
+            continue
         if r["strategy"]+"+"+str(r["sparsity"]) in grouped_runs:
             grouped_runs[r["strategy"]+"+"+str(r["sparsity"])].append(r[f"{attr_name}{metric}"])
         else:
@@ -308,8 +311,8 @@ def plot_metric_single(runs, metric, ax, attr=None, backdoor=False):
         x= np.array([k[:-5].split("+")[1] for k in grouped_runs_stats.keys() if 'mean' in k])
     #     sns.plot(x.ravel(),y.ravel(), ax=ax).set_title(attr_name)
         ax.errorbar(x=x.ravel(), y=y.ravel(), yerr=yerr, label=strat)
-    if attr_name=='':
-        ax.set_title(metrics_dict[metric])
+    if backdoor:
+        ax.set_title(f"{metrics_dict[metric]} - {backdoor_type}")
     else:
         ax.set_title(attr_name[:-1])
     ax.legend()
@@ -320,12 +323,15 @@ def plot_metric_single(runs, metric, ax, attr=None, backdoor=False):
 def facet_plot_relative_metric_single(runs, metric, attr, ax, backdoor=False):
     if backdoor:
         attr_name = 'backdoor'
+        backdoor_type = attr
     else:
         attr_name = celeba_classes()[attr]
     grouped_runs = {}
     pos_metric = f'pos_{metric}'
     neg_metric = f'neg_{metric}'
     for r in runs:
+        if backdoor_type not in r["group"]:
+            continue
         if r["strategy"]+str(r["sparsity"])+"pos" in grouped_runs:
             grouped_runs[r["strategy"]+str(r["sparsity"])+"pos"].append(r[f"{attr_name}-{pos_metric}"])
         else:
@@ -369,7 +375,7 @@ def facet_plot_relative_metric_single(runs, metric, attr, ax, backdoor=False):
     ax.errorbar(x=xx_neg.ravel(), y=yneg.ravel(), yerr=yerr_neg, label='neg')
     ax.legend()
     if backdoor:
-        ax.set_title(metrics_dict[metric])
+        ax.set_title(f"{metrics_dict[metric]} - {backdoor_type}")
     else:
         ax.set_title(attr_name)
         
@@ -378,12 +384,16 @@ def facet_plot_relative_metric_single(runs, metric, attr, ax, backdoor=False):
 def facet_plot_metric_single(runs, metric, attr, ax, backdoor=False):
     if backdoor:
         attr_name = 'backdoor'
+        backdoor_type = attr
     else:
         attr_name = celeba_classes()[attr]
     grouped_runs = {}
     pos_metric = f'pos_{metric}'
     neg_metric = f'neg_{metric}'
     for r in runs:
+        print(backdoor_type)
+        if backdoor_type not in r["group"]:
+            continue
         if r["strategy"]+"+"+str(r["sparsity"])+"pos" in grouped_runs:
             #print(r.keys())
             #print(r["group"])
@@ -419,7 +429,7 @@ def facet_plot_metric_single(runs, metric, attr, ax, backdoor=False):
         ax.errorbar(x=xx_neg.ravel(), y=yneg.ravel(), yerr=yerr_neg, label=f'{strat}-neg', marker='^')
     ax.legend()
     if backdoor:
-        ax.set_title(metrics_dict[metric])
+        ax.set_title(f"{metrics_dict[metric]} - {backdoor_type}")
     else:
         ax.set_title(attr_name)
 
@@ -714,6 +724,9 @@ def get_run_summaries(runs, backdoor):
     
 ##### Ghis is the one
 def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
+    labels = identity_labels
+    if backdoor:
+        labels = backdoor_types
     # get the metrics (w.r.t. Male, Young, Chubby, Pale Skin)
     single_label = True
     for run in runs[attr]:
@@ -736,10 +749,15 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     
     # plot the metrics (FPR, FNR, ACC sparse / dense)
     img_fpr = io.BytesIO()
-    fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
-    for i, idd in enumerate(identity_labels):
-#         print([i//2, i % 2])
-        facet_plot_fn(runs[attr], 'fpr', idd, axs1[i//2, i % 2], backdoor=backdoor)
+    if backdoor:
+        fig1, axs1 = plt.subplots(1, 2, figsize=(10,4))
+    else:
+        fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
+    for i, idd in enumerate(labels):
+        if backdoor:
+            facet_plot_fn(runs[attr], 'fpr', idd, axs1[i], backdoor=backdoor)
+        else:
+            facet_plot_fn(runs[attr], 'fpr', idd, axs1[i//2, i % 2], backdoor=backdoor)
     fig1.suptitle(f'FPR{title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
     plt.savefig(img_fpr, format='png')
@@ -748,40 +766,91 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     plot_fpr_url = base64.b64encode(img_fpr.getvalue()).decode()
     
     img_fnr = io.BytesIO()
-    fig2, axs2 = plt.subplots(2, 2, figsize=(10,8))
-    for i, idd in enumerate(identity_labels):
-        facet_plot_fn(runs[attr], 'fnr', idd, axs2[i//2, i % 2], backdoor=backdoor)   
-    fig2.suptitle(f'FNR{title_clause} ({get_nice_attr_name(attr)})')    
+    if backdoor:
+        fig1, axs1 = plt.subplots(1, 2, figsize=(10,4))
+    else:
+        fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
+    for i, idd in enumerate(labels):
+        if backdoor:
+            facet_plot_fn(runs[attr], 'fnr', idd, axs1[i], backdoor=backdoor)
+        else:
+            facet_plot_fn(runs[attr], 'fnr', idd, axs1[i//2, i % 2], backdoor=backdoor)
+    fig1.suptitle(f'FnR{title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
     plt.savefig(img_fnr, format='png')
     img_fnr.seek(0)
     plt.clf()
     plot_fnr_url = base64.b64encode(img_fnr.getvalue()).decode()
-        
 
     img_acc = io.BytesIO()
-    fig3, axs3 = plt.subplots(2, 2, figsize=(10,8))
-    for i, idd in enumerate(identity_labels):
-        facet_plot_fn(runs[attr], 'acc', idd, axs3[i//2, i % 2], backdoor=backdoor)  
-    fig3.suptitle(f'Accuracy{title_clause} ({get_nice_attr_name(attr)})')    
+    if backdoor:
+        fig1, axs1 = plt.subplots(1, 2, figsize=(10,4))
+    else:
+        fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
+    for i, idd in enumerate(labels):
+        if backdoor:
+            facet_plot_fn(runs[attr], 'acc', idd, axs1[i], backdoor=backdoor)
+        else:
+            facet_plot_fn(runs[attr], 'acc', idd, axs1[i//2, i % 2], backdoor=backdoor)
+    fig1.suptitle(f'Acc {title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
     plt.savefig(img_acc, format='png')
     img_acc.seek(0)
     plt.clf()
     plot_acc_url = base64.b64encode(img_acc.getvalue()).decode()
-        
-        
+
     img_ba = io.BytesIO()
-    fig4, axs4 = plt.subplots(2, 2, figsize=(10,8))
-    for i, idd in enumerate(identity_labels):
-        plot_metric_single(runs[attr], "bas", axs4[i//2, i % 2], idd, backdoor=backdoor)
-    fig4.suptitle(f'Bias Amplification Scores ({get_nice_attr_name(attr)})')    
-    
+    if backdoor:
+        fig1, axs1 = plt.subplots(1, 2, figsize=(10,4))
+    else:
+        fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
+    for i, idd in enumerate(labels):
+        if backdoor:
+            plot_metric_single(runs[attr], "bas", axs1[i], idd, backdoor=backdoor)
+        else:
+            plot_metric_single(runs[attr], "bas", axs1[i//2, i % 2], idd, backdoor=backdoor)
+    fig1.suptitle(f'Bias Amplification {title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
     plt.savefig(img_ba, format='png')
     img_ba.seek(0)
     plt.clf()
     plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
+    # img_fnr = io.BytesIO()
+    # fig2, axs2 = plt.subplots(2, 2, figsize=(10,8))
+    # for i, idd in enumerate(identity_labels):
+    #     facet_plot_fn(runs[attr], 'fnr', idd, axs2[i//2, i % 2], backdoor=backdoor)   
+    # fig2.suptitle(f'FNR{title_clause} ({get_nice_attr_name(attr)})')    
+    # plt.tight_layout()
+    # plt.savefig(img_fnr, format='png')
+    # img_fnr.seek(0)
+    # plt.clf()
+    # plot_fnr_url = base64.b64encode(img_fnr.getvalue()).decode()
+    #     
+
+    # img_acc = io.BytesIO()
+    # fig3, axs3 = plt.subplots(2, 2, figsize=(10,8))
+    # for i, idd in enumerate(identity_labels):
+    #     facet_plot_fn(runs[attr], 'acc', idd, axs3[i//2, i % 2], backdoor=backdoor)  
+    # fig3.suptitle(f'Accuracy{title_clause} ({get_nice_attr_name(attr)})')    
+    # plt.tight_layout()
+    # plt.savefig(img_acc, format='png')
+    # img_acc.seek(0)
+    # plt.clf()
+    # plot_acc_url = base64.b64encode(img_acc.getvalue()).decode()
+    #     
+    #     
+    # img_ba = io.BytesIO()
+    # fig4, axs4 = plt.subplots(2, 2, figsize=(10,8))
+    # for i, idd in enumerate(identity_labels):
+    #     plot_metric_single(runs[attr], "bas", axs4[i//2, i % 2], idd, backdoor=backdoor)
+    # fig4.suptitle(f'Bias Amplification Scores ({get_nice_attr_name(attr)})')    
+    # 
+    # plt.tight_layout()
+    # plt.savefig(img_ba, format='png')
+    # img_ba.seek(0)
+    # plt.clf()
+    # plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
     return plot_ba_url, plot_fpr_url, plot_fnr_url, plot_acc_url
+    return plot_fpr_url, plot_fpr_url, plot_fpr_url, plot_fpr_url
     
 
