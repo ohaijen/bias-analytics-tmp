@@ -294,7 +294,7 @@ def plot_metric_single(runs, metric, ax, attr=None, backdoor=False):
         attr_name = ''
     grouped_runs = {}
     for r in runs:
-        if backdoor_type not in r["group"]:
+        if backdoor and backdoor_type not in r["group"]:
             continue
         if r["strategy"]+"+"+str(r["sparsity"]) in grouped_runs:
             grouped_runs[r["strategy"]+"+"+str(r["sparsity"])].append(r[f"{attr_name}{metric}"])
@@ -330,7 +330,7 @@ def facet_plot_relative_metric_single(runs, metric, attr, ax, backdoor=False):
     pos_metric = f'pos_{metric}'
     neg_metric = f'neg_{metric}'
     for r in runs:
-        if backdoor_type not in r["group"]:
+        if backdoor and backdoor_type not in r["group"]:
             continue
         if r["strategy"]+str(r["sparsity"])+"pos" in grouped_runs:
             grouped_runs[r["strategy"]+str(r["sparsity"])+"pos"].append(r[f"{attr_name}-{pos_metric}"])
@@ -391,8 +391,7 @@ def facet_plot_metric_single(runs, metric, attr, ax, backdoor=False):
     pos_metric = f'pos_{metric}'
     neg_metric = f'neg_{metric}'
     for r in runs:
-        print(backdoor_type)
-        if backdoor_type not in r["group"]:
+        if backdoor and backdoor_type not in r["group"]:
             continue
         if r["strategy"]+"+"+str(r["sparsity"])+"pos" in grouped_runs:
             #print(r.keys())
