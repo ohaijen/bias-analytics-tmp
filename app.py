@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import utils.runs as runs_joint
 import utils.single_label as runs_sl
+import utils.iwildcam as iw
 from utils.projects import PROJECTS
 import io
 import base64
@@ -172,6 +173,10 @@ def show_single_runs():
             plots = plots
             )
 
+@app.route("/iwildcam")
+def show_iwildcam():
+    runs  = iw.get_iwildcam_runs()
+    return render_template("iwildcam.html", title=f"iWildcam", table=runs.groupby(["group", "class_id"]).agg("mean").to_html(table_id="run_names"), plots=iw.plot_wilds_metrics(runs))
 
 @app.route("/examples")
 def show_a_pic():

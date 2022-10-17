@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+
+{% block title %} 
+	{{title}}
+{% endblock %} 
+
+{% block body %}
+	{{table | safe}}
+
+	
+	{%for plot_url in plots%}
+	<img src="data:image/png;base64,{{plot_url}}"></img>
+	{%endfor%}
+
+{% endblock %} 
