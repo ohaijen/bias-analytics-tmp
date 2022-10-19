@@ -148,11 +148,14 @@ def show_single_runs():
     dataset = request.args.get("dataset", default="celeba", type=str)
     arch = request.args.get("arch", default="resnet18", type=str)
     backdoor = request.args.get("backdoor", default=False, type=bool)
+    combined = request.args.get("combined", default=False, type=bool)
     short_arch = arch
     if arch == "resnet18":
         short_arch = "rn18"
     if backdoor:
         project_name = f"{dataset}-backdoor-single-{short_arch}"
+    elif combined:
+        project_name = f"{dataset}-combined-{short_arch}"
     else:
         project_name = f"{dataset}-single-{short_arch}"
     #return f"<html>{backdoor} {project_name}</html>"
@@ -162,7 +165,10 @@ def show_single_runs():
     runs, accs, fprs, fnrs, pred_poss = runs_sl.get_run_summaries(rs, backdoor)
     plots = {}
     for attr in runs.keys():
-        plots[attr] = runs_sl.plot_single_label_metrics(runs, attr, backdoor=backdoor)
+        if combined:
+            plots[attr] = runs_sl.plot_combined_runs_metrics(runs, attr)
+        else:
+            plots[attr] = runs_sl.plot_single_label_metrics(runs, attr, backdoor=backdoor)
 
     return render_template("single_runs.html", 
             run_counts= {k: v.to_html(table_id=f"{k}_counts") for k, v in runs_sl.get_run_counts(project_name).items()},

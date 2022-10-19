@@ -179,8 +179,13 @@ def compute_bas(run, targets, single_label=True):
                     continue
                 run[f"{identity_label_name}-bas"][i] = \
                 compute_bias_amplification(targets, run["test_predictions"], identity_label, i)
-        
-        
+
+
+def compute_cbas(run, targets, single_label=True):
+    identity_label_name = celeba_classes()[run['id-label']] #+ '-' + celeba_classes()[run['label']]
+    run[f"{identity_label_name}-bas"] = compute_bias_amplification(targets, run["test_predictions"], run['id-label'], run['label'], single_label=True)
+       
+
 def compute_bbas(run, targets, single_label=True):
     run["test_predictions"] = run["test_outputs"] > 0
     test_backdoor_ids = np.loadtxt(run['backdoor_test'], dtype=int)
@@ -218,6 +223,8 @@ def compute_errors_single(run, targets):
     if 'backdoor_test' in run.keys():
         backdoor_file = run['backdoor_test'] 
         identity_labelss = ['backdoor']
+    if run['combined']:
+        identity_labelss = [run['id-label']]
 #     print(identity_labelss)
 #     print(backdoor_file)
     label_targets = targets[:, run["label"]]
@@ -261,6 +268,7 @@ def compute_errors_single(run, targets):
 metrics_dict = {
     "bas": "Bias Amplification Score",
     "bbas": "Bias Amplification Score",
+    "cbas": "Bias Amplification Score",
     "fpr_diff": "False Positive Rate Difference",
     "fnr_diff": "False Negative Rate Difference",
     "acc_diff": "Accuracy Difference",
@@ -513,18 +521,27 @@ def get_runs_for_project(project):
     attrs_dict = {'blond': 9, 
                   'smiling':31,
                   'oval-face': 25,
+                  'oval_face': 25,
                   'big-nose': 7,
+                  'big_nose': 7,
+                  'big_lips': 6,
                   'mustache': 22,
-                  'receding-hairline': 8,
+                  'receding-hairline': 28,
+                  'receding_hairline': 28,
                   'bags-under-eyes': 3,
                   'wearing_necktie': 38,
-                  'attractive': 2
+                  'attractive': 2,
+                  'male': 20,
+                  'young': 39
                  }
 
     single_attrs = ['blond', 'smiling', 'oval-face', 'big-nose', 'mustache', 'receding-hairline', 'bags-under-eyes']
+    combined_attrs = ['male-oval_face', 'male-big_nose', 'male-big_lips', 'young-big_nose', 'young-mustache', 'young-receding_hairline']
     backdoor_attrs = ['blond', 'smiling']
     if PROJECTS[project]["backdoor"]:
         attrs = backdoor_attrs
+    elif PROJECTS[project]["combined"]:
+        attrs = combined_attrs
     else:
         attrs = single_attrs
 
@@ -575,6 +592,24 @@ def get_runs_for_project(project):
                 run["strategy"] = strategy(run)
                 run['type'] = desc(run)
                 print("########################## Run type", run['type'])
+    elif PROJECTS[project]["combined"]:
+        for attr in attrs:
+            attr_run = attr.split('-')
+            preprocessed_runs_attr[attr] = [v for v in preprocessed_runs if (attr_run[0] in v['group']) and (attr_run[1] in v['group'])]    
+
+            for run in preprocessed_runs_attr[attr]:
+                attr_run = attr.split('-')
+                run['id-label'] = attrs_dict[attr_run[0]]
+                run['label'] = attrs_dict[attr_run[1]]
+                ckpt_name = "best_sparse_checkpoint.ckpt"
+                if "s0" in run["name"] or "dense" in run["group"]:
+                    ckpt_name = "best_dense_checkpoint.ckpt"
+                run["ckpt_path"] = os.path.join(run["run_dir"], ckpt_name)
+                run["sparsity"] = sparsity(run)
+                run["strategy"] = strategy(run)
+                run['type'] = desc(run)
+                run["combined"] = True
+
     else:
         for attr in attrs:
             attr_run = attr
@@ -607,6 +642,8 @@ def get_runs_for_project(project):
         preprocessed_runs_attr[attr] = [r for h in typed_runs.values() for r in h.values() ]
 
     return preprocessed_runs_attr
+
+
 
 def get_run_counts(project):
     runs = get_runs_for_project(project)
@@ -647,6 +684,8 @@ def load_run_details(run, test_labels=None, best=True):
         run["test_predictions"] = run["test_outputs"] > 0
         if 'backdoor_test' in run.keys():
             compute_bbas(run, test_labels)
+        elif run['combined']:
+            compute_cbas(run, test_labels)
         else:
             compute_bas(run, test_labels)
         compute_errors_single(run, test_labels)
@@ -853,3 +892,61 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     return plot_fpr_url, plot_fpr_url, plot_fpr_url, plot_fpr_url
     
 
+def plot_combined_runs_metrics(runs, attr):
+    # get the metrics (w.r.t. Male, Young, Chubby, Pale Skin)
+    single_label = True
+    outlier_labels = []
+    id_label = runs[attr][-1]['id-label']
+    for run in runs[attr]:
+        print(run["sparsity"])
+        print(run["group"])
+        print('=================')
+    runs[attr].sort(key=lambda r: (r["sparsity"], r["group"]))
+
+    facet_plot_fn = facet_plot_metric_single
+    title_clause = ""
+
+    # plot the metrics (FPR, FNR, ACC sparse / dense)
+    img_fpr = io.BytesIO()
+    fig1, axs1 = plt.subplots(1, 1, figsize=(10,4))
+    facet_plot_fn(runs[attr], 'fpr', id_label, axs1, backdoor=False)
+    fig1.suptitle(f'FPR{title_clause} ({get_nice_attr_name(attr)})')    
+    plt.tight_layout()
+    plt.savefig(img_fpr, format='png')
+    img_fpr.seek(0)
+    plt.clf()
+    plot_fpr_url = base64.b64encode(img_fpr.getvalue()).decode()
+
+
+    img_fnr = io.BytesIO()
+    fig1, axs1 = plt.subplots(1, 1, figsize=(10,4))
+    facet_plot_fn(runs[attr], 'fnr', id_label, axs1, backdoor=False)
+    fig1.suptitle(f'FNR{title_clause} ({get_nice_attr_name(attr)})')    
+    plt.tight_layout()
+    plt.savefig(img_fnr, format='png')
+    img_fnr.seek(0)
+    plt.clf()
+    plot_fnr_url = base64.b64encode(img_fnr.getvalue()).decode()
+ 
+    img_acc = io.BytesIO()
+    fig1, axs1 = plt.subplots(1, 1, figsize=(10,4))
+    facet_plot_fn(runs[attr], 'acc', id_label, axs1, backdoor=False)
+    fig1.suptitle(f'Acc{title_clause} ({get_nice_attr_name(attr)})')    
+    plt.tight_layout()
+    plt.savefig(img_acc, format='png')
+    img_acc.seek(0)
+    plt.clf()
+    plot_acc_url = base64.b64encode(img_acc.getvalue()).decode()
+
+    img_ba = io.BytesIO()
+    fig1, axs1 = plt.subplots(1, 1, figsize=(10,4))
+    plot_metric_single(runs[attr], 'bas', axs1, id_label, backdoor=False)
+    fig1.suptitle(f'Bias Amplification {title_clause} ({get_nice_attr_name(attr)})')    
+    plt.tight_layout()
+    plt.savefig(img_ba, format='png')
+    img_ba.seek(0)
+    plt.clf()
+    plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
+
+    return plot_ba_url, plot_fpr_url, plot_fnr_url, plot_acc_url
+ 
