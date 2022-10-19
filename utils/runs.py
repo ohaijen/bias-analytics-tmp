@@ -14,6 +14,7 @@ import io
 import base64
 import pickle as pkl
 from .projects import PROJECTS
+from sklearn import metrics
 
 
 import wandb
@@ -143,6 +144,8 @@ def compute_bias_amplification(targets, predictions, protected_attribute_id, att
     protected_pos_targets = targets[protected_pos, attribute_id] 
     protected_neg_targets = targets[protected_neg, attribute_id]
   
+    # If the attribute frequency is very close for positive and negative identity
+    # attribute, doesn't make much sense to compute BA.
     if np.abs(protected_pos_targets.mean()-protected_neg_targets.mean())/ \
             np.minimum(protected_pos_targets.mean(), protected_neg_targets.mean()) < 0.1:
         print(f"Diff is too small for attribute {attr_names[attribute_id]}")
@@ -154,6 +157,7 @@ def compute_bias_amplification(targets, predictions, protected_attribute_id, att
         ba = protected_neg_predicts.sum()/(predictions[:,attribute_id]).sum() - \
              protected_neg_targets.sum()/(targets[:, attribute_id]).sum()
     return ba
+
 
 def compute_fpr_split(targets, predictions, protected_attribute_id, attribute_id):
     protected_attr = targets[:,protected_attribute_id].ravel()
@@ -190,6 +194,22 @@ def compute_acc_split(targets, predictions, protected_attribute_id, attribute_id
     protected_neg_targets = targets[protected_neg, attribute_id]
     pos_acc = np.mean(protected_pos_predicts==protected_pos_targets)
     neg_acc = np.mean(protected_neg_predicts==protected_neg_targets)
+    return pos_acc, neg_acc
+
+def compute_auc_split(targets, predictions, protected_attribute_id, attribute_id):
+    protected_attr = targets[:,protected_attribute_id].ravel()
+    protected_pos = np.argwhere(protected_attr == 1)
+    protected_neg = np.argwhere(protected_attr == 0)
+    protected_pos_predicts = predictions[protected_pos, attribute_id] 
+    protected_neg_predicts = predictions[protected_neg, attribute_id]
+    protected_pos_targets = targets[protected_pos, attribute_id] 
+    protected_neg_targets = targets[protected_neg, attribute_id]
+    fpr, tpr, thresholds = metrics.roc_curve(protected_pos_targets, protected_pos_predicts, pos_label=1)
+    pos_auc = metrics.auc(fpr, tpr)
+    fpr, tpr, thresholds = metrics.roc_curve(protected_neg_targets, protected_neg_predicts, pos_label=1)
+    neg_auc = metrics.auc(fpr, tpr)
+    pos_auc = np.mean(protected_pos_predicts==protected_pos_targets)
+    neg_auc = np.mean(protected_neg_predicts==protected_neg_targets)
     return pos_acc, neg_acc
 
 def compute_error_split(targets, predictions, protected_attribute_id, attribute_id):
@@ -237,9 +257,16 @@ def compute_errors(run, targets):
     fpr = np.sum(run["test_predictions"]*(1-targets), axis=0)/np.sum(1-targets, axis=0)
     fnr = np.sum((1-run["test_predictions"])*(targets), axis=0)/np.sum(targets, axis=0)
     acc = np.mean(run["test_predictions"]==targets, axis=0)
+    auc = np.zeros(acc.shape)
+    for i in range(acc.shape[0]):
+        fpr1, tpr1, thresholds = metrics.roc_curve(targets[i], run["test_predictions"][i], pos_label=1)
+        auc[i] = metrics.auc(fpr1, tpr1)
+    
     run["fpr"] = fpr
     run["fnr"] = fnr
     run["acc"] = acc
+    run["auc"] = auc
+    #run["auc"] = auc
     for identity_label in identity_labels:
         identity_label_name = attr_names[identity_label]
         # Initialize all arrays with NaNs
@@ -295,12 +322,12 @@ def compute_errors(run, targets):
 def compute_error_splits(run):
     compute_errors(run)
             
-metrics = {
-    "bas": "Bias Amplification Score",
-    "fpr_diff": "False Positive Rate Difference",
-    "fnr_diff": "False Negative Rate Difference",
-    "acc_diff": "Accuracy Difference"
-}
+# metrics = {
+#     "bas": "Bias Amplification Score",
+#     "fpr_diff": "False Positive Rate Difference",
+#     "fnr_diff": "False Negative Rate Difference",
+#     "acc_diff": "Accuracy Difference"
+# }
 
 def plot_metric(runs, metric, attr, ax):
     dataset = runs[0]["dataset"]
@@ -424,13 +451,17 @@ def sparsity(run):
     elif "s98" in name:
         return 98
     elif "s995" in name:
-        return 995
+        return 99.5
     elif "s99" in name:
         return 99
     elif "s0" in name or "dense" in name:
         return 0
     else:
         raise f"unknown sparsity for {name}!"
+
+def sparsity_group(sparsity):
+    sparsities = [0, 80, 90, 95, 98, 99, 99.5]
+    return sparsities.index(sparsity)
         
 def strategy(run):
     name = run["group"]
@@ -525,13 +556,23 @@ def get_run_counts(project):
 
 
 
-def generate_metric_plot(runs, metric_name = "Bias Amplification"):
-    mdf = runs.copy()
+def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", dataset='celeba'):
+    mdf = other_runs.copy()
     mdf.set_index(["strategy", "sparsity"], inplace=True)
     mdf = mdf.stack()
     mdf = pd.DataFrame(mdf)
     mdf.reset_index(inplace=True)
     mdf.columns = ["strategy", "sparsity", "attribute", metric_name]
+    print(mdf)
+    # ddd = mdf[mdf["strategy"] == "GMP-RI"]
+    # ddd = ddd.pivot(index="attribute", columns="sparsity", values=metric_name)
+
+    # ddd.sort_values(by=[99], inplace=True)
+    # ddd.reset_index(inplace=True)
+
+    #mdf2 = mdf[mdf["attribute"].isin(["Blond", "Smiling", "Big_Nose"])]
+    #mdf2["sparsity_group"] = mdf2["sparsity"].map(sparsity_group)
+    #raise ValueError(mdf)
 
 
     img = io.BytesIO()
@@ -544,6 +585,64 @@ def generate_metric_plot(runs, metric_name = "Bias Amplification"):
     plt.clf()  # Forced reset for matplotlib
 
     plot_url = base64.b64encode(img.getvalue()).decode()
+
+    # img = io.BytesIO()
+    # sns.relplot(data = mdf2,
+    #     row = 'attribute', 
+    #     col = 'strategy',
+    #     x = 'sparsity_group',
+    #     y = metric_name,
+    #     kind = 'line')
+    # plt.savefig(img, format='png')
+    # img.seek(0)
+    # plt.clf()  # Forced reset for matplotlib
+
+    # plot_url = base64.b64encode(img.getvalue()).decode()
+
+
+    # attrs_with_maxes = []
+    # if dataset == "celeba":
+    #     attributes = celeba_classes()
+    # else:
+    #     attributes = awa_classes()
+    # for attribute in attributes:
+    #     attribute_df = mdf[mdf.attribute == attribute].copy()
+    #     max_val = attribute_df[metric_name].dropna().max() 
+    #     if max_val > 0:
+    #         attrs_with_maxes.append([max_val, attribute])
+    # attrs_with_maxes.sort(key = lambda x: -x[0])
+    # #raise ValueError(attrs_with_maxes)
+    # max_to_show = 12
+    # img = io.BytesIO()
+    # fig, axs = plt.subplots(3, 4, figsize=(10, 7))
+    # for i, (_, attribute) in enumerate(attrs_with_maxes[:max_to_show]):
+    #     attribute_df = mdf[mdf.attribute == attribute]
+    #     attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-RI"])]
+    #     attribute_df["sparsity_group"] = attribute_df.sparsity.map(sparsity_group)
+    #     #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
+    #     sns.lineplot(data = attribute_df,
+    #         #hue = 'strategy', 
+    #         x = 'sparsity_group',
+    #         y = metric_name,
+    #         ax = axs[i%3, i//3])
+    #     axs[i%3, i//3].set_title(attribute)
+    #     # attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-PT"])]
+    #     # attribute_df["sparsity_group"] = attribute_df.sparsity.map(sparsity_group)
+    #     # #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
+    #     # sns.lineplot(data = attribute_df,
+    #     #     #hue = 'strategy', 
+    #     #     x = 'sparsity_group',
+    #     #     y = metric_name,
+    #     #     ax = axs[i%3, i//3])
+    #     # axs[i%3, i//3].set_title(attribute)
+    # plt.tight_layout()
+    # plt.savefig(img, format='png')
+    # img.seek(0)
+    # plt.clf()  # Forced reset for matplotlib
+    # plot_url = base64.b64encode(img.getvalue()).decode()
+
+    
+
     return(plot_url)
 
 # def make_a_plot():
@@ -612,7 +711,25 @@ def get_run_summaries(preprocessed_rn18_runs):
     preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
 
 
+
+    # AUC
     highlevels = []
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["type"]}
+        for i, attr_name in enumerate(attr_names):
+            label = attr_name
+            mydict[label] = run[f"auc"][i]
+        dicts.append(mydict)
+        
+    df = pd.DataFrame.from_dict(dicts)
+    averages_df = df.groupby("type").mean()
+    high_level_auc_df = averages_df.transpose()
+    highlevels.append(["auc", high_level_auc_df])
+    top_level_aucs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+
     dicts = []
     for run in preprocessed_rn18_runs:
         if "test_outputs" not in run:
@@ -624,12 +741,9 @@ def get_run_summaries(preprocessed_rn18_runs):
         dicts.append(mydict)
         
     df = pd.DataFrame.from_dict(dicts)
-
-    
     averages_df = df.groupby("type").mean()
     high_level_acc_df = averages_df.transpose()
     highlevels.append(["acc", high_level_acc_df])
-    
     top_level_accuracies = pd.DataFrame(df.groupby("type").mean().transpose().mean())
 
     dicts = []
@@ -739,3 +853,12 @@ def get_run_summaries(preprocessed_rn18_runs):
         averages_diffs_df = averages_df[cols] / averages_df[cols].iloc[0]
         fnr_dicts[identity_label_name] = [df, averages_df, averages_diffs_df]  
     return top_level_accuracies, highlevels, ba_dicts, fpr_dicts, fnr_dicts
+
+
+def compute_worst(ba_dicts):
+    print(ba_dicts.keys())
+    df, averages_df, averages_diffs_df = ba_dicts["Male"]
+    #return df
+    return averages_df
+    #average_diffs_dfs.sort_values(by=""
+

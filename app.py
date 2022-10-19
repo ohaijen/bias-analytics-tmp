@@ -18,9 +18,7 @@ def hello_world():
 #@app.route('/image/')
 @app.route('/image/<path:dataset>/<path:index>')
 def send_image(dataset, index):
-    #filename = f"{str(int(index)+1).zfill(6)}.jpg"
     filename=index
-    #return send_from_directory("static/images", "hello.jpg")
     if dataset == "celeba":
         return send_from_directory("/home/Datasets/celeba/img_align_celeba", filename)
     elif dataset == "full_celeba":
@@ -64,7 +62,9 @@ def show_single_run_names():
     
 
 
-    runs_df = pd.DataFrame(runs)
+    print(runs.keys())
+    print(runs["smiling"][0])
+    runs_df = pd.concat([pd.DataFrame(v) for v in runs.values()])
     return render_template("generic_table.html", title=f"{project_name} Runs", table=runs_df.to_html(table_id="run_names"))
 
 
@@ -79,6 +79,28 @@ def show_classes():
         classes = []
     numbered_classes = pd.DataFrame([[i,k] for i, k in enumerate(classes)], columns=["number", "class"])
     return render_template("generic_table.html", title=f"{dataset} Classes", table=numbered_classes.to_html(table_id="classes"))
+
+
+@app.route("/debug")
+def debug():
+    dataset = request.args.get("dataset", default="celeba", type=str)
+    arch = request.args.get("arch", default="resnet18", type=str)
+    short_arch = arch
+    if arch == "resnet18":
+        short_arch = "rn18"
+    project_name = f"{dataset}-all-{short_arch}"
+    if project_name not in PROJECTS:
+        raise ValueError(f"Project {project_name} doesn't exist.")
+
+    counts = runs_joint.get_run_counts(project_name).to_html(table_id="counts")
+    rn18_runs = runs_joint.get_runs_for_project(project_name)
+
+
+    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs)
+    
+    debug = runs_joint.compute_worst(ba_splits)
+    return render_template("generic_table.html", title=f"{dataset} Diffs", table=debug.to_html())
+    
 
 @app.route('/runs')
 def show_runs():
@@ -96,6 +118,11 @@ def show_runs():
 
 
     top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs)
+    
+    runs_joint.compute_worst(ba_splits)
+
+
+
     hls = [{"name": name, "table": averages_df.to_html(table_id=f'myTable{name}')} for [name, averages_df] in high_level ]
     ba_res = []
     for k, [df, averages_df, averages_diffs_df] in ba_splits.items():
@@ -103,12 +130,11 @@ def show_runs():
         column_df = averages_df.copy()
         column_df['sparsity'] = column_df['sparsity'].astype("string")
         column_df["type"] = column_df['strategy'] + "-" + column_df['sparsity']
-        print(f"the {k} BA COLUMN DF IS", column_df, column_df["type"])
         columns = [c for c in column_df.columns if c not in ("strategy", "sparsity")]
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, metric_name = "Bias Amplification")})
+        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "Bias Amplification")})
 
     fpr_res = []
     for k, [df, averages_df, averages_diffs_df] in fpr_splits.items():
@@ -122,7 +148,7 @@ def show_runs():
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        fpr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fpr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, metric_name = "FPR Difference")})
+        fpr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fpr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "FPR Difference")})
         #plot_url = runs_joint.generate_metric_plot(averages_df)
         #table = averages_df.to_html()
     fnr_res = []
@@ -137,7 +163,7 @@ def show_runs():
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        fnr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fnr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, metric_name = "FNR Difference")})
+        fnr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fnr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference")})
     #return " ".join([run["group"] for run in rn18_runs if "995" in run["group"]])
     return render_template("runs.html", counts_table = counts, top_level_accs = top_level_accs.to_html(table_id = "top_level_accs"), summary_table = hls, per_attr_bas = ba_res, per_attr_fprs = fpr_res, per_attr_fnrs = fnr_res)
 

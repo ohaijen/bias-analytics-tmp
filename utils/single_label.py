@@ -51,6 +51,7 @@ def get_nice_attr_name(attr):
 
 
 def compute_bias_amplification(targets, predictions, protected_attribute_id, attribute_id, single_label=False):
+    print(protected_attribute_id, attribute_id)
     if attribute_id == protected_attribute_id:
         return None
     #print("targets", targets)
@@ -169,8 +170,11 @@ def compute_bas(run, targets, single_label=True):
     for identity_label in identity_labels:
         identity_label_name = celeba_classes()[identity_label]
         if single_label:
+            print(run["run_dir"])
             run[f"{identity_label_name}-bas"] = \
             compute_bias_amplification(targets, run["test_predictions"], identity_label, run['label'], single_label=True)
+            print(run[f"{identity_label_name}-bas"])
+
         else:
             run[f"{identity_label_name}-bas"] = np.zeros(40)
             run[f"{identity_label_name}-bas"][:] = np.nan
@@ -390,43 +394,57 @@ def facet_plot_metric_single(runs, metric, attr, ax, backdoor=False):
     grouped_runs = {}
     pos_metric = f'pos_{metric}'
     neg_metric = f'neg_{metric}'
-    for r in runs:
-        if backdoor and backdoor_type not in r["group"]:
-            continue
-        if r["strategy"]+"+"+str(r["sparsity"])+"pos" in grouped_runs:
-            #print(r.keys())
-            #print(r["group"])
-            #print([r["group"] for r in runs])
-            grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"pos"].append(r[f"{attr_name}-{pos_metric}"])
-        else:
-            grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"pos"] = [r[f"{attr_name}-{pos_metric}"]]
-        if r["strategy"]+"+"+str(r["sparsity"])+"neg" in grouped_runs:
-            grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"neg"].append(r[f"{attr_name}-{neg_metric}"])
-        else:
-            grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"neg"] = [r[f"{attr_name}-{neg_metric}"]]
-    for strat in ("RI", "PT"):
-        grouped_runs_stats = {}
-        matching_runs = {k:v for k, v in grouped_runs.items() if "Dense" in k or strat in k}
-        for k in matching_runs.keys():
-            stat = np.array(grouped_runs[k])
-            grouped_runs_stats[k+'-mean'] = np.nanmean(stat, axis=0).clip(min=0)
-            grouped_runs_stats[k+'-std'] = np.nanstd(stat, axis=0).clip(min=0)
+    # for r in runs:
+    #     if backdoor and backdoor_type not in r["group"]:
+    #         continue
+    #     if r["strategy"]+"+"+str(r["sparsity"])+"pos" in grouped_runs:
+    #         #print(r.keys())
+    #         #print(r["group"])
+    #         #print([r["group"] for r in runs])
+    #         grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"pos"].append(r[f"{attr_name}-{pos_metric}"])
+    #     else:
+    #         grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"pos"] = [r[f"{attr_name}-{pos_metric}"]]
+    #     if r["strategy"]+"+"+str(r["sparsity"])+"neg" in grouped_runs:
+    #         grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"neg"].append(r[f"{attr_name}-{neg_metric}"])
+    #     else:
+    #         grouped_runs[r["strategy"]+"+"+str(r["sparsity"])+"neg"] = [r[f"{attr_name}-{neg_metric}"]]
+    # for strat in ("RI", "PT"):
+    #     grouped_runs_stats = {}
+    #     matching_runs = {k:v for k, v in grouped_runs.items() if "Dense" in k or strat in k}
+    #     for k in matching_runs.keys():
+    #         stat = np.array(grouped_runs[k])
+    #         grouped_runs_stats[k+'-mean'] = np.nanmean(stat, axis=0).clip(min=0)
+    #         grouped_runs_stats[k+'-std'] = np.nanstd(stat, axis=0).clip(min=0)
+    #     ks_pos = [k[:-5] for k in grouped_runs_stats.keys() if 'mean' in k and 'pos' in k]
+    #     ks_neg = [k[:-5]for k in grouped_runs_stats.keys() if 'mean' in k and 'neg' in k]
+    #     ypos= np.array([v for k, v in grouped_runs_stats.items() if 'mean' in k and 'pos' in k])
+    #     yneg= np.array([v for k, v in grouped_runs_stats.items() if 'mean' in k and 'neg' in k])
+    #     yerr_pos= np.array([v for k, v in grouped_runs_stats.items() if 'std' in k and 'pos' in k])
+    #     yerr_neg= np.array([v for k, v in grouped_runs_stats.items() if 'std' in k and 'neg' in k])
+    #     print(ks_pos)
+    #     xx_pos = np.array([x[:-3].split("+")[1]   for x in ks_pos])
+    #     xx_neg = np.array([x[:-3].split("+")[1]   for x in ks_neg])
     #     y= np.array([v for k, v in grouped_runs.items() if 'mean' in k])
     #     yerr= np.array([v for k, v in grouped_runs_stats.items() if 'std' in k])
     #     ks = [k[:-5] for k in grouped_runs_stats.keys() if 'mean' in k]
     #     ks = [k[:-5] for k in grouped_runs.keys()]
-        ks_pos = [k[:-5] for k in grouped_runs_stats.keys() if 'mean' in k and 'pos' in k]
-        ks_neg = [k[:-5]for k in grouped_runs_stats.keys() if 'mean' in k and 'neg' in k]
-        ypos= np.array([v for k, v in grouped_runs_stats.items() if 'mean' in k and 'pos' in k])
-        yneg= np.array([v for k, v in grouped_runs_stats.items() if 'mean' in k and 'neg' in k])
-        yerr_pos= np.array([v for k, v in grouped_runs_stats.items() if 'std' in k and 'pos' in k])
-        yerr_neg= np.array([v for k, v in grouped_runs_stats.items() if 'std' in k and 'neg' in k])
-        print(ks_pos)
-        xx_pos = np.array([x[:-3].split("+")[1]   for x in ks_pos])
-        xx_neg = np.array([x[:-3].split("+")[1]   for x in ks_neg])
-        ax.errorbar(x=xx_pos.ravel(), y=ypos.ravel(), yerr=yerr_pos, label=f'{strat}-pos',  marker = "v")#, uplims=True, lolims=True)
-        ax.errorbar(x=xx_neg.ravel(), y=yneg.ravel(), yerr=yerr_neg, label=f'{strat}-neg', marker='^')
-    ax.legend()
+    dfs = []
+    for strat in ("RI", "PT"):
+        pos_matches = [{metric: v[f"{attr_name}-{pos_metric}"], "label":f"{strat}-pos", "sparsity": str(v["sparsity"]) }
+                for v in runs if "Dense" in v["strategy"] or strat in v["strategy"]]
+        neg_matches = [{metric: v[f"{attr_name}-{neg_metric}"], "label":f"{strat}-neg", "sparsity": str(v["sparsity"]) }
+                for v in runs if "Dense" in v["strategy"] or strat in v["strategy"]]
+        all_matches = pos_matches + neg_matches
+        dfs.append(pd.DataFrame(all_matches))
+    
+    sns.lineplot(data = pd.concat(dfs),
+        x = 'sparsity',
+        y = metric,
+        hue = 'label',
+        ax = ax)
+        #ax.errorbar(x=xx_pos.ravel(), y=ypos.ravel(), yerr=yerr_pos, label=f'{strat}-pos',  marker = "v")#, uplims=True, lolims=True)
+        #ax.errorbar(x=xx_neg.ravel(), y=yneg.ravel(), yerr=yerr_neg, label=f'{strat}-neg', marker='^')
+    #ax.legend()
     if backdoor:
         ax.set_title(f"{metrics_dict[metric]} - {backdoor_type}")
     else:
@@ -515,7 +533,7 @@ def get_runs_for_project(project):
                   'oval-face': 25,
                   'big-nose': 7,
                   'mustache': 22,
-                  'receding-hairline': 8,
+                  'receding-hairline': 28,
                   'bags-under-eyes': 3,
                   'wearing_necktie': 38,
                   'attractive': 2
@@ -538,8 +556,7 @@ def get_runs_for_project(project):
                           "name": run.name, "state": run.state, "url": run.url, "id":run.id,
                           "run_dir": get_run_dir(run), "seed": int(run.name[5:]),
                          "timestamp": get_timestamp(run),
-                      "epoch": get_max_epoch(run), "username": run.user._attrs["username"]} for run in runs if "ep40" not in run.group
-                        ]
+                      "epoch": get_max_epoch(run), "username": run.user._attrs["username"]} for run in runs if "ep40" not in run.group and "valid" not in run.group                       ]
     #raise ValueError([r["group"] for r in preprocessed_runs])
     for run in preprocessed_runs:
         if run["username"] == 'alexp':
@@ -814,41 +831,6 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     img_ba.seek(0)
     plt.clf()
     plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
-    # img_fnr = io.BytesIO()
-    # fig2, axs2 = plt.subplots(2, 2, figsize=(10,8))
-    # for i, idd in enumerate(identity_labels):
-    #     facet_plot_fn(runs[attr], 'fnr', idd, axs2[i//2, i % 2], backdoor=backdoor)   
-    # fig2.suptitle(f'FNR{title_clause} ({get_nice_attr_name(attr)})')    
-    # plt.tight_layout()
-    # plt.savefig(img_fnr, format='png')
-    # img_fnr.seek(0)
-    # plt.clf()
-    # plot_fnr_url = base64.b64encode(img_fnr.getvalue()).decode()
-    #     
-
-    # img_acc = io.BytesIO()
-    # fig3, axs3 = plt.subplots(2, 2, figsize=(10,8))
-    # for i, idd in enumerate(identity_labels):
-    #     facet_plot_fn(runs[attr], 'acc', idd, axs3[i//2, i % 2], backdoor=backdoor)  
-    # fig3.suptitle(f'Accuracy{title_clause} ({get_nice_attr_name(attr)})')    
-    # plt.tight_layout()
-    # plt.savefig(img_acc, format='png')
-    # img_acc.seek(0)
-    # plt.clf()
-    # plot_acc_url = base64.b64encode(img_acc.getvalue()).decode()
-    #     
-    #     
-    # img_ba = io.BytesIO()
-    # fig4, axs4 = plt.subplots(2, 2, figsize=(10,8))
-    # for i, idd in enumerate(identity_labels):
-    #     plot_metric_single(runs[attr], "bas", axs4[i//2, i % 2], idd, backdoor=backdoor)
-    # fig4.suptitle(f'Bias Amplification Scores ({get_nice_attr_name(attr)})')    
-    # 
-    # plt.tight_layout()
-    # plt.savefig(img_ba, format='png')
-    # img_ba.seek(0)
-    # plt.clf()
-    # plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
     return plot_ba_url, plot_fpr_url, plot_fnr_url, plot_acc_url
     return plot_fpr_url, plot_fpr_url, plot_fpr_url, plot_fpr_url
     

@@ -13,13 +13,17 @@ Results for run training all binary attributes together.
 	<h3>Averaged across all classes</h3>
 	{{top_level_accs | safe}}
 	<h3>Per-class</h3>
+	<h1>Overall AUC (not split by attr)</h1>
 	{{summary_table[0]['table'] | safe}}
 
-	<h1>Overall FPR (not split by attr)</h1>
+	<h1>Overall ACC (not split by attr)</h1>
 	{{summary_table[1]['table'] | safe}}
 
-	<h1>Overall FNR (not split by attr) </h1>
+	<h1>Overall FPR (not split by attr)</h1>
 	{{summary_table[2]['table'] | safe}}
+
+	<h1>Overall FNR (not split by attr) </h1>
+	{{summary_table[3]['table'] | safe}}
 
 	{%for res  in per_attr_bas%}
 	<h1>Bias Amplification - {{res['attr']}}</h1>
