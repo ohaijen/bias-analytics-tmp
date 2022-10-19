@@ -545,6 +545,7 @@ def get_runs_for_project(project):
                   'big_lips': 6,
                   'mustache': 22,
                   'receding-hairline': 28,
+                  'receding_hairline': 28,
                   'bags-under-eyes': 3,
                   'wearing_necktie': 38,
                   'attractive': 2,
