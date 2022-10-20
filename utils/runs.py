@@ -81,16 +81,48 @@ def get_test_labels(dset):
         class_attributes = []
         class_sizes = [len(os.listdir(os.path.join(images_folder, sf))) for sf in images_subfolders]
         labels = np.zeros([np.sum(class_sizes), 85])
-        print("label shape is ", labels.shape)
         offset = 0
         for i, species in enumerate(images_subfolders):
             species_idx = np.where(classes["klass"].values == species)[0].ravel()[0]
             attrs = predicates_mtx[species_idx]
             labels[offset:offset+class_sizes[i]] = attrs #np.stack(attrs, class_sizes[i], axis=1)
             offset = offset + class_sizes[i]
-        print("labels are", labels)
         return labels
 
+def get_train_labels(dset):
+    split_map = {
+        "train": 0,
+        "valid": 1,
+        "test": 2,
+    }
+    if 'celeba' in dset:
+        splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
+        labels = pd.read_csv("/home/Datasets/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
+        labels = labels[ splits.ravel()==0]
+        return labels>0
+    elif 'awa' in dset:
+        predicates_file = os.path.join("/home/Datasets/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
+        predicates_mtx = np.loadtxt(predicates_file)
+        classes = pd.read_csv("/home/Datasets/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
+        classes.columns = ["id", "klass"]
+        ccs = classes.reset_index().set_index("klass")
+        image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "train_images")
+        classes = os.listdir(image_dir)
+        classes.sort()
+        predicates_mtx = predicates_mtx[ccs.loc[classes]["index"].values]
+
+        #images_subfolders = os.listdir(image_dir)
+        #images_subfolders.sort()
+        class_attributes = []
+        class_sizes = [len(os.listdir(os.path.join(image_dir, sf))) for sf in classes]
+        labels = np.zeros([np.sum(class_sizes), 85])
+        offset = 0
+        for i, species in enumerate(classes):
+            species_idx = np.where(classes["klass"].values == species)[0].ravel()[0]
+            attrs = predicates_mtx[species_idx]
+            labels[offset:offset+class_sizes[i]] = attrs #np.stack(attrs, class_sizes[i], axis=1)
+            offset = offset + class_sizes[i]
+        return labels
 
 def get_test_image_ids(dset):
     split_map = {
@@ -120,7 +152,7 @@ celeba_identity_labels = [20, 39, 13, 26]
 awa_identity_labels = [75, 84, 44, 11]#63, 44]
 
 
-def compute_bias_amplification(targets, predictions, protected_attribute_id, attribute_id, dataset):
+def compute_bias_amplification(targets, predictions, protected_attribute_id, attribute_id, dataset, pos_fracs_df, neg_fracs_df):
     if 'celeba' in dataset:
         attr_names = celeba_classes()
     else:
@@ -146,11 +178,21 @@ def compute_bias_amplification(targets, predictions, protected_attribute_id, att
   
     # If the attribute frequency is very close for positive and negative identity
     # attribute, doesn't make much sense to compute BA.
-    if np.abs(protected_pos_targets.mean()-protected_neg_targets.mean())/ \
-            np.minimum(protected_pos_targets.mean(), protected_neg_targets.mean()) < 0.1:
+    # if np.abs(protected_pos_targets.mean()-protected_neg_targets.mean())/ \
+    #         np.minimum(protected_pos_targets.mean(), protected_neg_targets.mean()) < 0.1:
+    pos_frac = pos_fracs_df.loc[attribute_id, protected_attribute_id]
+    neg_frac = neg_fracs_df.loc[attribute_id, protected_attribute_id]
+    if np.abs(pos_frac-neg_frac)/np.minimum(pos_frac, neg_frac) < 0.1:
         print(f"Diff is too small for attribute {attr_names[attribute_id]}")
         return None
-    if protected_pos_targets.mean() > protected_neg_targets.mean():
+    #protected_pos_train = train_labels[np.argwhere(train_labels[:, protected_attribute_id] == 1), attribute_id]
+    #protected_neg_train = train_labels[np.argwhere(train_labels[:, protected_attribute_id] == 0), attribute_id]
+    # if np.abs(protected_pos_train.mean()-protected_neg_train.mean())/ \
+    #         np.minimum(protected_pos_train.mean(), protected_neg_train.mean()) < 0.1:
+    #     print(f"Diff is too small for attribute {attr_names[attribute_id]}")
+    #     return None
+    #if protected_pos_train.mean() > protected_neg_train.mean():
+    if pos_frac > neg_frac:
         ba = protected_pos_predicts.sum()/predictions[:,attribute_id].sum() - \
              protected_pos_targets.sum()/targets[:, attribute_id].sum()
     else:
@@ -224,7 +266,8 @@ def compute_error_split(targets, predictions, protected_attribute_id, attribute_
     neg_err = np.mean(protected_neg_predicts!=protected_neg_targets)
     return pos_err, neg_err
 
-def compute_bas(run, targets):
+def compute_bas(run, targets, pos_fracs_df, neg_fracs_df):
+    #train_labels = get_train_labels(dataset)
     if 'celeba' in run["dataset"]:
         identity_labels = celeba_identity_labels
         attr_names = celeba_classes()
@@ -244,7 +287,7 @@ def compute_bas(run, targets):
             if i == identity_label:
                 continue
             run[f"{identity_label_name}-bas"][i] = \
-            compute_bias_amplification(targets, run["test_predictions"], identity_label, i, run["dataset"])
+            compute_bias_amplification(targets, run["test_predictions"], identity_label, i, run["dataset"], pos_fracs_df, neg_fracs_df)
         #np.savetxt(bas_path, run[f"{identity_label_name}-bas"])
             
 def compute_errors(run, targets):
@@ -563,7 +606,6 @@ def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", d
     mdf = pd.DataFrame(mdf)
     mdf.reset_index(inplace=True)
     mdf.columns = ["strategy", "sparsity", "attribute", metric_name]
-    print(mdf)
     # ddd = mdf[mdf["strategy"] == "GMP-RI"]
     # ddd = ddd.pivot(index="attribute", columns="sparsity", values=metric_name)
 
@@ -653,14 +695,52 @@ def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", d
 #     fig.suptitle(f"{metrics['bas']}s, CelebA on ResNet18")
 #     plt.tight_layout()
 
+
+def compute_cooccurrence_matrices(dataset):
+    # Returns three matrices: a covariance matrix, a matrix of the proportion  of 
+    # instances that are positive for the protected, one for the proportion of
+    # instances that are negative for the protected instance, as measured on the 
+    # train distribution.
+    if dataset == "celeba":
+        attributes = celeba_classes()
+        identity_attributes = celeba_identity_labels
+    elif dataset == "awa":
+        attributes = awa_classes()
+        identity_attributes = awa_identity_labels
+    else:
+        raise ValueError(f"Unknown dataset {dataset}")
+    train_labels = get_train_labels(dataset)
+    corrs = np.zeros([train_labels.shape[1], len(identity_attributes)])
+    pos_fracs = np.zeros([train_labels.shape[1], len(identity_attributes)])
+    neg_fracs = np.zeros([train_labels.shape[1], len(identity_attributes)])
+    for i in range(corrs.shape[0]):
+        for j, attr in enumerate(identity_attributes):
+            corrs[i,j] = np.corrcoef(train_labels[i], train_labels[attr])[1, 0]
+            protected_pos_train = train_labels[np.argwhere(train_labels[:, attr] == 1), i]
+            pos_fracs[i,j] = protected_pos_train.mean()
+            protected_neg_train = train_labels[np.argwhere(train_labels[:, attr] == 0), i]
+            neg_fracs[i,j] = protected_neg_train.mean()
+
+    corrs_df = pd.DataFrame(corrs)
+    corrs_df.columns = identity_attributes
+    pos_fracs_df = pd.DataFrame(pos_fracs)
+    pos_fracs_df.columns = identity_attributes
+    neg_fracs_df = pd.DataFrame(neg_fracs)
+    neg_fracs_df.columns = identity_attributes
+
+    return corrs_df, pos_fracs_df, neg_fracs_df
+
+
 def load_run_details(run):
     test_labels = get_test_labels(run["dataset"])
     cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
     if True  and os.path.exists(cached_path):
+        print("USING THE CACHE")
         with open (cached_path, 'rb') as f:
             # TODO: make sure the existing parts of the run match
             return pkl.load(f)
     elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
+        print("RECOMPUTING")
         run["test_outputs"] = np.loadtxt(run["run_dir"] + "/" + "test_outputs.txt")
         run["test_predictions"] = run["test_outputs"] > 0
         run["sparsity"] = sparsity(run)
@@ -676,6 +756,7 @@ def load_run_details(run):
 
 def get_run_summaries(preprocessed_rn18_runs):
     dataset = preprocessed_rn18_runs[0]["dataset"]
+    covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
     if 'celeba' in dataset:
         identity_labels = celeba_identity_labels
         attr_names = celeba_classes()
@@ -698,7 +779,7 @@ def get_run_summaries(preprocessed_rn18_runs):
             run["sparsity"] = sparsity(run)
             run["strategy"] = strategy(run)
             run['type'] = desc(run)
-            compute_bas(run, test_labels)
+            compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
             compute_errors(run, test_labels)
             with open (cached_path, 'wb') as f:
                 pkl.dump(run, f)
@@ -856,7 +937,6 @@ def get_run_summaries(preprocessed_rn18_runs):
 
 
 def compute_worst(ba_dicts):
-    print(ba_dicts.keys())
     df, averages_df, averages_diffs_df = ba_dicts["Male"]
     #return df
     return averages_df
