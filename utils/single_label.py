@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 # from utils.datasets import get_datasets
 # from utils.misc import celeba_classes
 from .projects import PROJECTS
+from .runs import compute_cooccurrence_matrices 
 
 
 import wandb
@@ -50,7 +51,7 @@ def get_nice_attr_name(attr):
     return attr
 
 
-def compute_bias_amplification(targets, predictions, protected_attribute_id, attribute_id, single_label=False):
+def compute_bias_amplification(targets, predictions, protected_attribute_id, attribute_id, pos_fracs_df, neg_fracs_df,  single_label=False):
     print(protected_attribute_id, attribute_id)
     if attribute_id == protected_attribute_id:
         return None
@@ -70,7 +71,10 @@ def compute_bias_amplification(targets, predictions, protected_attribute_id, att
     protected_pos_targets = targets[protected_pos, attribute_id] 
     protected_neg_targets = targets[protected_neg, attribute_id]
   
-    if protected_pos_targets.mean() > protected_neg_targets.mean():
+    pos_frac = pos_fracs_df.loc[attribute_id, protected_attribute_id]
+    neg_frac = neg_fracs_df.loc[attribute_id, protected_attribute_id]
+    #if protected_pos_targets.mean() > protected_neg_targets.mean():
+    if pos_frac > neg_frac:
         ba = protected_pos_predicts.sum()/total_attr - \
              protected_pos_targets.sum()/targets[:, attribute_id].sum()
     else:
@@ -166,13 +170,13 @@ def compute_acc_split(targets, predictions, protected_attribute_id, attribute_id
     return pos_acc, neg_acc
 
 
-def compute_bas(run, targets, single_label=True):
+def compute_bas(run, targets, pos_fracs_df, neg_fracs_df, single_label=True):
     for identity_label in identity_labels:
         identity_label_name = celeba_classes()[identity_label]
         if single_label:
             print(run["run_dir"])
             run[f"{identity_label_name}-bas"] = \
-            compute_bias_amplification(targets, run["test_predictions"], identity_label, run['label'], single_label=True)
+            compute_bias_amplification(targets, run["test_predictions"], identity_label, run['label'], pos_fracs_df, neg_fracs_df, single_label=True)
             print(run[f"{identity_label_name}-bas"])
 
         else:
@@ -185,7 +189,7 @@ def compute_bas(run, targets, single_label=True):
                 compute_bias_amplification(targets, run["test_predictions"], identity_label, i)
 
 
-def compute_cbas(run, targets, single_label=True):
+def compute_cbas(run, targets, pos_fracs_df, neg_fracs_df, single_label=True):
     identity_label_name = celeba_classes()[run['id-label']] #+ '-' + celeba_classes()[run['label']]
     run[f"{identity_label_name}-bas"] = compute_bias_amplification(targets, run["test_predictions"], run['id-label'], run['label'], single_label=True)
        
@@ -573,7 +577,7 @@ def get_runs_for_project(project):
                           "name": run.name, "state": run.state, "url": run.url, "id":run.id,
                           "run_dir": get_run_dir(run), "seed": int(run.name[5:]),
                          "timestamp": get_timestamp(run),
-                      "epoch": get_max_epoch(run), "username": run.user._attrs["username"]} for run in runs if "ep40" not in run.group and "valid" not in run.group                       ]
+                      "epoch": get_max_epoch(run), "username": run.user._attrs["username"]} for run in runs if ("ep40" not in run.group and "valid" in run.group) or PROJECTS[project]["combined"]                      ]
     #raise ValueError([r["group"] for r in preprocessed_runs])
     for run in preprocessed_runs:
         if run["username"] == 'alexp':
@@ -584,6 +588,7 @@ def get_runs_for_project(project):
         preprocessed_runs_attr = {}
         num_classes = 1
         single_label = True
+        run["combined"] = False
 
     if PROJECTS[project]["backdoor"]:
         backdoor_files = {}
@@ -610,6 +615,7 @@ def get_runs_for_project(project):
                 run['type'] = desc(run)
                 print("########################## Run type", run['type'])
     elif PROJECTS[project]["combined"]:
+        #preprocessed_runs_attr = {}
         for attr in attrs:
             attr_run = attr.split('-')
             preprocessed_runs_attr[attr] = [v for v in preprocessed_runs if (attr_run[0] in v['group']) and (attr_run[1] in v['group'])]    
@@ -634,6 +640,7 @@ def get_runs_for_project(project):
                 attr_run = attr.split('_')[-1]
             preprocessed_runs_attr[attr] = [v for v in preprocessed_runs if attr_run in v['group']]    
 
+            print(preprocessed_runs_attr.keys())
             for run in preprocessed_runs_attr[attr]:
                 run['label'] = attrs_dict[attr]
                 ckpt_name = "best_sparse_checkpoint.ckpt"
@@ -657,6 +664,7 @@ def get_runs_for_project(project):
                 typed_runs[run["type"]][run["name"]] = run
 
         preprocessed_runs_attr[attr] = [r for h in typed_runs.values() for r in h.values() ]
+    #raise ValueError([x["group"] for attr in attrs for x in preprocessed_runs_attr[attr]])
 
     return preprocessed_runs_attr
 
@@ -683,7 +691,7 @@ def get_run_counts(project):
     return pivoted
 
 
-def load_run_details(run, test_labels=None, best=True):
+def load_run_details(run, test_labels, pos_fracs_df, neg_fracs_df,  best=True):
     if test_labels is None:
         test_labels = get_test_labels()
     if best:
@@ -702,9 +710,9 @@ def load_run_details(run, test_labels=None, best=True):
         if 'backdoor_test' in run.keys():
             compute_bbas(run, test_labels)
         elif run['combined']:
-            compute_cbas(run, test_labels)
+            compute_cbas(run, test_labels, pos_fracs_df, neg_fracs_df)
         else:
-            compute_bas(run, test_labels)
+            compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
         compute_errors_single(run, test_labels)
         with open (cached_path, 'wb') as f:
             pkl.dump(run, f)
@@ -713,11 +721,12 @@ def load_run_details(run, test_labels=None, best=True):
         print("!!!!!!!!!!!!!!Not enough artifacts found for run ", run["run_dir"])
     return run
 
-def get_run_summaries(runs, backdoor):
+def get_run_summaries(runs, dataset, backdoor):
     test_labels = get_test_labels()
+    _, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
     for attr, attr_runs in runs.items():
         for i, run in enumerate(attr_runs):
-            runs[attr][i] = load_run_details(run, test_labels)
+            runs[attr][i] = load_run_details(run, test_labels, pos_fracs_df, neg_fracs_df)
         runs[attr] = [v for v in runs[attr] if 'test_outputs' in v]
         print("there are this many runs", len(runs))
         #print(runs)
@@ -826,6 +835,7 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     else:
         fig1, axs1 = plt.subplots(2, 2, figsize=(10,8))
     for i, idd in enumerate(labels):
+        print(runs[attr])
         if backdoor:
             facet_plot_fn(runs[attr], 'fnr', idd, axs1[i], backdoor=backdoor)
         else:

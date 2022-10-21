@@ -53,7 +53,7 @@ def get_max_epoch(run):
         return 0
 
 
-def get_test_labels(dset):
+def get_test_labels(dset, val = False):
     split_map = {
         "train": 0,
         "valid": 1,
@@ -62,9 +62,14 @@ def get_test_labels(dset):
     if 'celeba' in dset:
         splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
         labels = pd.read_csv("/home/Datasets/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
-        labels = labels[ splits.ravel()==2]
+        if val:
+            labels = labels[ splits.ravel()==1]
+        else:
+            labels = labels[ splits.ravel()==2]
         return labels>0
     elif 'awa' in dset:
+        if val:
+            return get_train_labels(dset)
         predicates_file = os.path.join("/home/Datasets/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
         predicates_mtx = np.loadtxt(predicates_file)
         classes = pd.read_csv("/home/Datasets/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
@@ -88,6 +93,9 @@ def get_test_labels(dset):
             labels[offset:offset+class_sizes[i]] = attrs #np.stack(attrs, class_sizes[i], axis=1)
             offset = offset + class_sizes[i]
         return labels
+
+def get_val_labels(dset):
+    return get_test_labels(dset, val=True)
 
 def get_train_labels(dset):
     split_map = {
@@ -304,11 +312,16 @@ def compute_errors(run, targets):
     for i in range(acc.shape[0]):
         fpr1, tpr1, thresholds = metrics.roc_curve(targets[i], run["test_predictions"][i], pos_label=1)
         auc[i] = metrics.auc(fpr1, tpr1)
+    predpos = np.mean(run["test_predictions"], axis=0)
+    #raise ValueError(run["test_outputs"])
+    uncertainty=np.mean(np.abs(1/(1 + np.exp(-run["test_outputs"]))-0.5) < 0.4, axis=0)
     
     run["fpr"] = fpr
     run["fnr"] = fnr
     run["acc"] = acc
     run["auc"] = auc
+    run["predpos"] = predpos
+    run["uncertainty"]=uncertainty
     #run["auc"] = auc
     for identity_label in identity_labels:
         identity_label_name = attr_names[identity_label]
@@ -628,65 +641,66 @@ def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", d
 
     plot_url = base64.b64encode(img.getvalue()).decode()
 
-    # img = io.BytesIO()
-    # sns.relplot(data = mdf2,
-    #     row = 'attribute', 
-    #     col = 'strategy',
-    #     x = 'sparsity_group',
-    #     y = metric_name,
-    #     kind = 'line')
-    # plt.savefig(img, format='png')
-    # img.seek(0)
-    # plt.clf()  # Forced reset for matplotlib
 
-    # plot_url = base64.b64encode(img.getvalue()).decode()
+    return(plot_url)
 
 
-    # attrs_with_maxes = []
-    # if dataset == "celeba":
-    #     attributes = celeba_classes()
-    # else:
-    #     attributes = awa_classes()
-    # for attribute in attributes:
-    #     attribute_df = mdf[mdf.attribute == attribute].copy()
-    #     max_val = attribute_df[metric_name].dropna().max() 
-    #     if max_val > 0:
-    #         attrs_with_maxes.append([max_val, attribute])
-    # attrs_with_maxes.sort(key = lambda x: -x[0])
-    # #raise ValueError(attrs_with_maxes)
-    # max_to_show = 12
-    # img = io.BytesIO()
-    # fig, axs = plt.subplots(3, 4, figsize=(10, 7))
-    # for i, (_, attribute) in enumerate(attrs_with_maxes[:max_to_show]):
-    #     attribute_df = mdf[mdf.attribute == attribute]
-    #     attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-RI"])]
-    #     attribute_df["sparsity_group"] = attribute_df.sparsity.map(sparsity_group)
-    #     #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
-    #     sns.lineplot(data = attribute_df,
-    #         #hue = 'strategy', 
-    #         x = 'sparsity_group',
-    #         y = metric_name,
-    #         ax = axs[i%3, i//3])
-    #     axs[i%3, i//3].set_title(attribute)
-    #     # attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-PT"])]
-    #     # attribute_df["sparsity_group"] = attribute_df.sparsity.map(sparsity_group)
-    #     # #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
-    #     # sns.lineplot(data = attribute_df,
-    #     #     #hue = 'strategy', 
-    #     #     x = 'sparsity_group',
-    #     #     y = metric_name,
-    #     #     ax = axs[i%3, i//3])
-    #     # axs[i%3, i//3].set_title(attribute)
-    # plt.tight_layout()
-    # plt.savefig(img, format='png')
-    # img.seek(0)
-    # plt.clf()  # Forced reset for matplotlib
-    # plot_url = base64.b64encode(img.getvalue()).decode()
+def generate_detailed_plot(other_runs, runs, accs, corrs,  metric_name = "Bias Amplification", dataset='celeba'):
+
+
+    mdf = other_runs.copy()
+    mdf.set_index(["strategy", "sparsity"], inplace=True)
+    mdf = mdf.stack()
+    mdf = pd.DataFrame(mdf)
+    mdf.reset_index(inplace=True)
+    mdf.columns = ["strategy", "sparsity", "attribute", metric_name]
+
+    attrs_with_maxes = []
+    if dataset == "celeba":
+        attributes = celeba_classes()
+    else:
+        attributes = awa_classes()
+    for attribute in attributes:
+        attribute_df = mdf[mdf.attribute == attribute].copy()
+        max_val = attribute_df[metric_name].dropna().max() 
+        if max_val > 0:
+            attrs_with_maxes.append([max_val, attribute])
+    attrs_with_maxes.sort(key = lambda x: -x[0])
+    #raise ValueError(attrs_with_maxes)
+    max_to_show = 12
+    img = io.BytesIO()
+    fig, axs = plt.subplots(3, 4, figsize=(10, 7))
+    for i, (_, attribute) in enumerate(attrs_with_maxes[:max_to_show]):
+        attribute_df = mdf[mdf.attribute == attribute]
+        attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-RI"])]
+        attribute_df["sparsity_group"] = attribute_df.sparsity.map(str)
+        attribute_id = celeba_classes().index(attribute)
+        #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
+        sns.lineplot(data = attribute_df,
+            #hue = 'strategy', 
+            x = 'sparsity_group',
+            y = metric_name,
+            ax = axs[i%3, i//3])
+        axs[i%3, i//3].set_title(
+                f"{attribute}\nAcc: {round(accs.loc[attribute, '0-Dense'], 2)} Corr:{round(corrs.loc[attribute_id, 20], 2)}")
+        # attribute_df = attribute_df[attribute_df.strategy.isin(["Dense", "GMP-PT"])]
+        # attribute_df["sparsity_group"] = attribute_df.sparsity.map(sparsity_group)
+        # #raise ValueError(attribute, attrs_with_maxes, attribute_df, mdf)
+        # sns.lineplot(data = attribute_df,
+        #     #hue = 'strategy', 
+        #     x = 'sparsity_group',
+        #     y = metric_name,
+        #     ax = axs[i%3, i//3])
+        # axs[i%3, i//3].set_title(attribute)
+    plt.tight_layout()
+    plt.savefig(img, format='png')
+    img.seek(0)
+    plt.clf()  # Forced reset for matplotlib
+    plot_url = base64.b64encode(img.getvalue()).decode()
 
     
 
     return(plot_url)
-
 # def make_a_plot():
 #     fig, axs = plt.subplots(2, 2, figsize=(8,6))
 #     for i, idd in enumerate(identity_labels):
@@ -701,7 +715,7 @@ def compute_cooccurrence_matrices(dataset):
     # instances that are positive for the protected, one for the proportion of
     # instances that are negative for the protected instance, as measured on the 
     # train distribution.
-    if dataset == "celeba":
+    if "celeba" in dataset:
         attributes = celeba_classes()
         identity_attributes = celeba_identity_labels
     elif dataset == "awa":
@@ -715,7 +729,7 @@ def compute_cooccurrence_matrices(dataset):
     neg_fracs = np.zeros([train_labels.shape[1], len(identity_attributes)])
     for i in range(corrs.shape[0]):
         for j, attr in enumerate(identity_attributes):
-            corrs[i,j] = np.corrcoef(train_labels[i], train_labels[attr])[1, 0]
+            corrs[i,j] = np.corrcoef(train_labels[:,i], train_labels[:,attr])[1, 0]
             protected_pos_train = train_labels[np.argwhere(train_labels[:, attr] == 1), i]
             pos_fracs[i,j] = protected_pos_train.mean()
             protected_neg_train = train_labels[np.argwhere(train_labels[:, attr] == 0), i]
@@ -730,23 +744,44 @@ def compute_cooccurrence_matrices(dataset):
 
     return corrs_df, pos_fracs_df, neg_fracs_df
 
+def get_thresholds(outputs, labels):
+    pos_per = np.mean(labels, axis=0)
+    # Note that we do this on the raw outputs and not the sigmoids.
+    thresholds = np.ones(pos_per.shape[0])
+    for i in range(thresholds.shape[0]):
+        thresholds[i] = \
+                np.argpartition(outputs[:,i], round(pos_per[i]))[round(pos_per[i])]
+    return thresholds
+    
 
-def load_run_details(run):
+def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
+    print(run["run_dir"])
     test_labels = get_test_labels(run["dataset"])
     cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
-    if True  and os.path.exists(cached_path):
+    if threshold_adjusted:
+        cached_path = os.path.join(run["run_dir"], "thresholded_run_stats.pkl")
+    if True and os.path.exists(cached_path):
         print("USING THE CACHE")
         with open (cached_path, 'rb') as f:
             # TODO: make sure the existing parts of the run match
             return pkl.load(f)
     elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
         print("RECOMPUTING")
+        thresholds = np.zeros(test_labels.shape[1])
+        if threshold_adjusted:
+            if not os.path.exists(run["run_dir"] + "/" + "valid_outputs.txt"):
+                return run
+            run["val_outputs"] = np.loadtxt(run["run_dir"] + "/" + "valid_outputs.txt")
+            thresholds = get_thresholds(run["val_outputs"], get_val_labels(run["dataset"]))
+        run["thresholds"] = thresholds
         run["test_outputs"] = np.loadtxt(run["run_dir"] + "/" + "test_outputs.txt")
-        run["test_predictions"] = run["test_outputs"] > 0
+        run["test_predictions"] = np.zeros(run["test_outputs"].shape)
+        for i in range(test_labels.shape[1]):
+            run["test_predictions"][:, i] = run["test_outputs"][:, i] > thresholds[i]
         run["sparsity"] = sparsity(run)
         run["strategy"] = strategy(run)
         run['type'] = desc(run)
-        compute_bas(run, test_labels)
+        compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
         compute_errors(run, test_labels)
         with open (cached_path, 'wb') as f:
             pkl.dump(run, f)
@@ -754,7 +789,9 @@ def load_run_details(run):
     else:
         return run
 
-def get_run_summaries(preprocessed_rn18_runs):
+
+
+def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     dataset = preprocessed_rn18_runs[0]["dataset"]
     covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
     if 'celeba' in dataset:
@@ -767,25 +804,26 @@ def get_run_summaries(preprocessed_rn18_runs):
     test_labels = get_test_labels(dataset)
     print("there are this many runs before compute", len(preprocessed_rn18_runs))
     for i, run in enumerate(preprocessed_rn18_runs):
-        cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
-        if False  and os.path.exists(cached_path):
-            with open (cached_path, 'rb') as f:
-                # TODO: make sure the existing parts of the run match
-                preprocessed_rn18_runs[i] = pkl.load(f)
-        elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
-            run["test_outputs"] = np.loadtxt(run["run_dir"] + "/" + "test_outputs.txt")
-            run["test_predictions"] = run["test_outputs"] > 0
-            #run["correct"] = run["test_predictions"] == test_labels
-            run["sparsity"] = sparsity(run)
-            run["strategy"] = strategy(run)
-            run['type'] = desc(run)
-            compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
-            compute_errors(run, test_labels)
-            with open (cached_path, 'wb') as f:
-                pkl.dump(run, f)
-        else:
-            print(f"run {run['group']} has no test outputs! {cached_path}")
-            continue
+        run = load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted)
+        # cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
+        # if False  and  os.path.exists(cached_path):
+        #     with open (cached_path, 'rb') as f:
+        #         # TODO: make sure the existing parts of the run match
+        #         preprocessed_rn18_runs[i] = pkl.load(f)
+        # elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
+        #     run["test_outputs"] = np.loadtxt(run["run_dir"] + "/" + "test_outputs.txt")
+        #     run["test_predictions"] = run["test_outputs"] > 0
+        #     #run["correct"] = run["test_predictions"] == test_labels
+        #     run["sparsity"] = sparsity(run)
+        #     run["strategy"] = strategy(run)
+        #     run['type'] = desc(run)
+        #     compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
+        #     compute_errors(run, test_labels)
+        #     with open (cached_path, 'wb') as f:
+        #         pkl.dump(run, f)
+        # else:
+        #     print(f"run {run['group']} has no test outputs! {cached_path}")
+        #     continue
     
     preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
     print("there are this many runs", len(preprocessed_rn18_runs))
@@ -860,6 +898,40 @@ def get_run_summaries(preprocessed_rn18_runs):
     #averages_df.reset_index(inplace=True)
     high_level_acc_df = averages_df.transpose()
     highlevels.append(["fnr", high_level_acc_df])
+
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["type"]}
+        for i, attr_name in enumerate(attr_names):
+            label = attr_name
+            mydict[label] = run[f"predpos"][i]
+        dicts.append(mydict)
+        
+    df = pd.DataFrame.from_dict(dicts)
+    averages_df = df.groupby("type").mean()
+    high_level_predpos_df = averages_df.transpose()
+    highlevels.append(["predpos", high_level_predpos_df])
+
+
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["type"]}
+        for i, attr_name in enumerate(attr_names):
+            label = attr_name
+            mydict[label] = run[f"uncertainty"][i]
+        dicts.append(mydict)
+        
+    df = pd.DataFrame.from_dict(dicts)
+    averages_df = df.groupby("type").mean()
+    high_level_uncertainty_df = averages_df.transpose()
+    highlevels.append(["uncertainty", high_level_uncertainty_df])
+
+
+    top_level_predposs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
 
 
 
