@@ -444,8 +444,8 @@ def facet_plot_metric_single(runs, metric, attr, ax, backdoor=False):
                 for v in runs if "Dense" in v["strategy"] or strat in v["strategy"]]
         all_matches = pos_matches + neg_matches
         dfs.append(pd.DataFrame(all_matches))
-    
-    sns.lineplot(data = pd.concat(dfs),
+    print(dfs) 
+    sns.lineplot(data = pd.concat(dfs, ignore_index=True),
         x = 'sparsity',
         y = metric,
         hue = 'label',
