@@ -25,21 +25,30 @@ Results for run training all binary attributes together.
 	<h1>Overall FNR (not split by attr) </h1>
 	{{summary_table[3]['table'] | safe}}
 
+	<h1>Overall Predicted Positive Rate (not split by attr) </h1>
+	{{summary_table[4]['table'] | safe}}
+
+	<h1>Overall Uncertainty (not split by attr) </h1>
+	{{summary_table[5]['table'] | safe}}
+
 	{%for res  in per_attr_bas%}
 	<h1>Bias Amplification - {{res['attr']}}</h1>
 	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	<img src="data:image/png;base64,{{res['detail_plot_url']}}"></img>
 	{{res['table'] | safe}}
 	{%endfor%}
 	<h1>False Positive Rates</h1>
 	{%for res  in per_attr_fprs%}
 	<h1>FPR Gap - {{res['attr']}}</h1>
 	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	<img src="data:image/png;base64,{{res['detail_plot_url']}}"></img>
 	{{res['table'] | safe}}
 	{%endfor%}
 	<h1>False Negative Rates</h1>
 	{%for res  in per_attr_fnrs%}
 	<h1>FNR Gap -  {{res['attr']}}</h1>
 	<img src="data:image/png;base64,{{res['plot_url']}}"></img>
+	<img src="data:image/png;base64,{{res['detail_plot_url']}}"></img>
 	{{res['table'] | safe}}
 	{%endfor%}
 {% endblock %} 
