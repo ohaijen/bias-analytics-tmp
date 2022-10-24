@@ -769,11 +769,13 @@ def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
     cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
     if threshold_adjusted:
         cached_path = os.path.join(run["run_dir"], "thresholded_run_stats.pkl")
-    if False and os.path.exists(cached_path):
+    if True  and os.path.exists(cached_path):
         print("USING THE CACHE")
         with open (cached_path, 'rb') as f:
             # TODO: make sure the existing parts of the run match
-            return pkl.load(f)
+            run = pkl.load(f)
+            print(run.keys())
+            return run
     elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
         print("RECOMPUTING")
         thresholds = np.zeros(test_labels.shape[1])
@@ -812,8 +814,7 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     #attr_name = attr_names[attr]
     test_labels = get_test_labels(dataset)
     print("there are this many runs before compute", len(preprocessed_rn18_runs))
-    for i, run in enumerate(preprocessed_rn18_runs):
-        run = load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted)
+    preprocessed_rn18_runs = [load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted) for run in preprocessed_rn18_runs]
         # cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
         # if False  and  os.path.exists(cached_path):
         #     with open (cached_path, 'rb') as f:
@@ -835,7 +836,7 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
         #     continue
     
     preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
-    print("there are this many runs", len(preprocessed_rn18_runs))
+    print("there are this many runs", len(preprocessed_rn18_runs), preprocessed_rn18_runs[0].keys())
     preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
 
 
@@ -846,6 +847,7 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     dicts = []
     for run in preprocessed_rn18_runs:
         if "test_outputs" not in run:
+            print(f"!!!! Dropping run, {run['run_dir']}")
             continue
         mydict = {"seed": run["name"], "type": run["type"]}
         for i, attr_name in enumerate(attr_names):
