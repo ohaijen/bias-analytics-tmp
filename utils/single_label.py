@@ -42,7 +42,7 @@ def get_max_epoch(run):
     return 0
 
 identity_labels = [20, 39, 13, 26]
-backdoor_labels = [2, 9, 31, 38]
+backdoor_labels = [2, 9, 31, 38, 25, 7]
 single_attr_labels = [2, 9, 25, 7, 22, 28, 3, 31, 38]
 backdoor_types = ["grayscale", "yellow_square"]
 
@@ -559,7 +559,7 @@ def get_runs_for_project(project):
 
     single_attrs = ['blond', 'smiling', 'oval-face', 'big-nose', 'mustache', 'receding-hairline', 'bags-under-eyes']
     combined_attrs = ['male-oval_face', 'male-big_nose', 'male-big_lips', 'young-big_nose', 'young-mustache', 'young-receding_hairline']
-    backdoor_attrs = ['blond', 'smiling']
+    backdoor_attrs = ['blond', 'smiling', 'oval-face', 'big-nose']
     if PROJECTS[project]["backdoor"]:
         attrs = backdoor_attrs
     elif PROJECTS[project]["combined"]:
@@ -728,8 +728,7 @@ def get_run_summaries(runs, dataset, backdoor):
         for i, run in enumerate(attr_runs):
             runs[attr][i] = load_run_details(run, test_labels, pos_fracs_df, neg_fracs_df)
         runs[attr] = [v for v in runs[attr] if 'test_outputs' in v]
-        print("there are this many runs", len(runs))
-        #print(runs)
+        print("there are this many runs for ", attr,  len(runs[attr]))
     accs = {}
     for attr, rs in runs.items():
         df = pd.DataFrame(rs)
