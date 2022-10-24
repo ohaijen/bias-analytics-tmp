@@ -78,7 +78,6 @@ def get_test_labels(dset, val = False):
         ood_image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "ood_images")
         ood_classes = os.listdir(ood_image_dir)
         ood_classes.sort()
-        ood_predicates_mtx = predicates_mtx[ccs.loc[ood_classes]["index"].values]
 
         images_folder = "/home/Datasets/Animals_with_Attributes2/ood_images/"
         images_subfolders = os.listdir(images_folder)
@@ -114,19 +113,24 @@ def get_train_labels(dset):
         classes = pd.read_csv("/home/Datasets/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
         classes.columns = ["id", "klass"]
         ccs = classes.reset_index().set_index("klass")
+        print(classes)
         image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "train_images")
-        classes = os.listdir(image_dir)
-        classes.sort()
-        predicates_mtx = predicates_mtx[ccs.loc[classes]["index"].values]
+        id_classes = os.listdir(image_dir)
+        id_classes.sort()
+        #predicates_mtx = predicates_mtx[ccs.loc[id_classes]["index"].values]
+        #print(predicates_mtx)
 
         #images_subfolders = os.listdir(image_dir)
         #images_subfolders.sort()
         class_attributes = []
-        class_sizes = [len(os.listdir(os.path.join(image_dir, sf))) for sf in classes]
+        class_sizes = [len(os.listdir(os.path.join(image_dir, sf))) for sf in id_classes]
         labels = np.zeros([np.sum(class_sizes), 85])
         offset = 0
-        for i, species in enumerate(classes):
+        print("this many classes", len(id_classes), id_classes)
+        for i, species in enumerate(id_classes):
+            #print(classes["klass"].values)
             species_idx = np.where(classes["klass"].values == species)[0].ravel()[0]
+            print(species, species_idx)
             attrs = predicates_mtx[species_idx]
             labels[offset:offset+class_sizes[i]] = attrs #np.stack(attrs, class_sizes[i], axis=1)
             offset = offset + class_sizes[i]
@@ -310,7 +314,7 @@ def compute_errors(run, targets):
     acc = np.mean(run["test_predictions"]==targets, axis=0)
     auc = np.zeros(acc.shape)
     for i in range(acc.shape[0]):
-        fpr1, tpr1, thresholds = metrics.roc_curve(targets[i], run["test_predictions"][i], pos_label=1)
+        fpr1, tpr1, thresholds = metrics.roc_curve(targets[:,i], run["test_predictions"][:, i], pos_label=1)
         auc[i] = metrics.auc(fpr1, tpr1)
     predpos = np.mean(run["test_predictions"], axis=0)
     #raise ValueError(run["test_outputs"])
@@ -720,7 +724,7 @@ def compute_cooccurrence_matrices(dataset):
     if "celeba" in dataset:
         attributes = celeba_classes()
         identity_attributes = celeba_identity_labels
-    elif dataset == "awa":
+    elif "awa" in dataset:
         attributes = awa_classes()
         identity_attributes = awa_identity_labels
     else:
@@ -835,6 +839,7 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
 
 
+    
 
     # AUC
     highlevels = []
