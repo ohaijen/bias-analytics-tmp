@@ -83,23 +83,24 @@ def show_classes():
 
 @app.route("/debug")
 def debug():
-    dataset = request.args.get("dataset", default="celeba", type=str)
-    arch = request.args.get("arch", default="resnet18", type=str)
-    short_arch = arch
-    if arch == "resnet18":
-        short_arch = "rn18"
-    project_name = f"{dataset}-all-{short_arch}"
-    if project_name not in PROJECTS:
-        raise ValueError(f"Project {project_name} doesn't exist.")
+    corrs, pos_fracs, neg_fracs = runs_joint.compute_cooccurrence_matrices("celeba")
+    # dataset = request.args.get("dataset", default="celeba", type=str)
+    # arch = request.args.get("arch", default="resnet18", type=str)
+    # short_arch = arch
+    # if arch == "resnet18":
+    #     short_arch = "rn18"
+    # project_name = f"{dataset}-all-{short_arch}"
+    # if project_name not in PROJECTS:
+    #     raise ValueError(f"Project {project_name} doesn't exist.")
 
-    counts = runs_joint.get_run_counts(project_name).to_html(table_id="counts")
-    rn18_runs = runs_joint.get_runs_for_project(project_name)
+    # counts = runs_joint.get_run_counts(project_name).to_html(table_id="counts")
+    # rn18_runs = runs_joint.get_runs_for_project(project_name)
 
 
-    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs)
-    
-    debug = runs_joint.compute_worst(ba_splits)
-    return render_template("generic_table.html", title=f"{dataset} Diffs", table=debug.to_html())
+    # top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs)
+    # 
+    # debug = runs_joint.compute_worst(ba_splits)
+    return render_template("generic_table.html", title=f" CELEBA", table=pos_fracs.to_html())
     
 
 @app.route('/runs')
@@ -112,16 +113,16 @@ def show_runs():
     project_name = f"{dataset}-all-{short_arch}"
     if project_name not in PROJECTS:
         raise ValueError(f"Project {project_name} doesn't exist.")
+    threshold_adjusted = request.args.get("threshold_adjusted", default=False, type=bool)
 
     counts = runs_joint.get_run_counts(project_name).to_html(table_id="counts")
     rn18_runs = runs_joint.get_runs_for_project(project_name)
-
-
-    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs)
     
-    runs_joint.compute_worst(ba_splits)
 
 
+    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs, threshold_adjusted=threshold_adjusted)
+    accs = high_level[1][1]
+    corrs = runs_joint.compute_cooccurrence_matrices(dataset)[0] 
 
     hls = [{"name": name, "table": averages_df.to_html(table_id=f'myTable{name}')} for [name, averages_df] in high_level ]
     ba_res = []
@@ -134,7 +135,9 @@ def show_runs():
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "Bias Amplification")})
+        print(averages_df)
+        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "Bias Amplification"),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs,  metric_name = "Bias Amplification")})
 
     fpr_res = []
     for k, [df, averages_df, averages_diffs_df] in fpr_splits.items():
@@ -148,7 +151,9 @@ def show_runs():
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        fpr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fpr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "FPR Difference")})
+        fpr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fpr-diff-{k}'),
+            "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "FPR Difference"),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs = accs, corrs = corrs, metric_name = "FPR Difference")})
         #plot_url = runs_joint.generate_metric_plot(averages_df)
         #table = averages_df.to_html()
     fnr_res = []
@@ -163,7 +168,9 @@ def show_runs():
         column_df = column_df[columns]
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
-        fnr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fnr-diff-{k}'), "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference")})
+        fnr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fnr-diff-{k}'),
+            "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference"),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs, metric_name = "FNR Difference")})
     #return " ".join([run["group"] for run in rn18_runs if "995" in run["group"]])
     return render_template("runs.html", counts_table = counts, top_level_accs = top_level_accs.to_html(table_id = "top_level_accs"), summary_table = hls, per_attr_bas = ba_res, per_attr_fprs = fpr_res, per_attr_fnrs = fnr_res)
 
@@ -188,7 +195,7 @@ def show_single_runs():
     if project_name not in PROJECTS:
         raise ValueError(f"Project {project_name} doesn't exist.")
     rs = runs_sl.get_runs_for_project(project_name)
-    runs, accs, fprs, fnrs, pred_poss = runs_sl.get_run_summaries(rs, backdoor)
+    runs, accs, fprs, fnrs, pred_poss = runs_sl.get_run_summaries(rs, dataset, backdoor)
     plots = {}
     for attr in runs.keys():
         if combined:

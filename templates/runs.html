@@ -28,8 +28,11 @@ Results for run training all binary attributes together.
 	<h1>Overall Predicted Positive Rate (not split by attr) </h1>
 	{{summary_table[4]['table'] | safe}}
 
-	<h1>Overall Uncertainty (not split by attr) </h1>
+	<h1>Overall Uncertainty (prob between 0.1 and 0.9) </h1>
 	{{summary_table[5]['table'] | safe}}
+
+	<h1>Overall High Uncertainty (prob between 0.4 and 0.6) </h1>
+	{{summary_table[6]['table'] | safe}}
 
 	{%for res  in per_attr_bas%}
 	<h1>Bias Amplification - {{res['attr']}}</h1>
