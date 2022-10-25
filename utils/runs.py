@@ -315,6 +315,7 @@ def compute_errors(run, targets):
     predpos = np.mean(run["test_predictions"], axis=0)
     #raise ValueError(run["test_outputs"])
     uncertainty=np.mean(np.abs(1/(1 + np.exp(-run["test_outputs"]))-0.5) < 0.4, axis=0)
+    high_uncertainty=np.mean(np.abs(1/(1 + np.exp(-run["test_outputs"]))-0.5) < 0.1, axis=0)
     
     run["fpr"] = fpr
     run["fnr"] = fnr
@@ -322,6 +323,7 @@ def compute_errors(run, targets):
     run["auc"] = auc
     run["predpos"] = predpos
     run["uncertainty"]=uncertainty
+    run["high_uncertainty"]=high_uncertainty
     #run["auc"] = auc
     for identity_label in identity_labels:
         identity_label_name = attr_names[identity_label]
@@ -745,12 +747,15 @@ def compute_cooccurrence_matrices(dataset):
     return corrs_df, pos_fracs_df, neg_fracs_df
 
 def get_thresholds(outputs, labels):
-    pos_per = np.mean(labels, axis=0)
+    pos_per = np.sum(labels, axis=0)
     # Note that we do this on the raw outputs and not the sigmoids.
     thresholds = np.ones(pos_per.shape[0])
     for i in range(thresholds.shape[0]):
         thresholds[i] = \
-                np.argpartition(outputs[:,i], round(pos_per[i]))[round(pos_per[i])]
+                np.partition(outputs[:,i], -1*round(pos_per[i]))[-1*round(pos_per[i])]
+    #np.argpartition(outputs[:,i], round(pos_per[i]))[round(pos_per[i])]
+    #            np.partition(k.flatten(), -2)[-2]
+    #raise ValueError(thresholds)
     return thresholds
     
 
@@ -760,7 +765,7 @@ def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
     cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
     if threshold_adjusted:
         cached_path = os.path.join(run["run_dir"], "thresholded_run_stats.pkl")
-    if True and os.path.exists(cached_path):
+    if False and os.path.exists(cached_path):
         print("USING THE CACHE")
         with open (cached_path, 'rb') as f:
             # TODO: make sure the existing parts of the run match
@@ -930,6 +935,20 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     high_level_uncertainty_df = averages_df.transpose()
     highlevels.append(["uncertainty", high_level_uncertainty_df])
 
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["type"]}
+        for i, attr_name in enumerate(attr_names):
+            label = attr_name
+            mydict[label] = run[f"high_uncertainty"][i]
+        dicts.append(mydict)
+        
+    df = pd.DataFrame.from_dict(dicts)
+    averages_df = df.groupby("type").mean()
+    high_level_high_uncertainty_df = averages_df.transpose()
+    highlevels.append(["high_uncertainty", high_level_high_uncertainty_df])
 
     top_level_predposs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
 
