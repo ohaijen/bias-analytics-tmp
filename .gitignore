@@ -1,8 +1,9 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+generated/
 *.py[cod]
 *$py.class
-*.swp
+*.py.swp
 
 # C extensions
 *.so
