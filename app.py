@@ -15,6 +15,29 @@ app = Flask(__name__)
 def hello_world():
     return "<p>Hello, World!</p>"
 
+
+import time
+from io import BytesIO
+import zipfile
+import os
+
+
+@app.route('/artifacts')
+def artifacts():
+    timestr = time.strftime("%Y%m%d-%H%M%S")
+    fileName = "artifacts_{}.zip".format(timestr)
+    memory_file = BytesIO()
+    file_path = 'generated/'
+    with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(file_path):
+            for file in files:
+                zipf.write(os.path.join(root, file))
+    memory_file.seek(0)
+    return send_file(memory_file, as_attachment=True, download_name=fileName)
+
+
+
+
 #@app.route('/image/')
 @app.route('/image/<path:dataset>/<path:index>')
 def send_image(dataset, index):
@@ -103,6 +126,37 @@ def debug():
     return render_template("generic_table.html", title=f" CELEBA", table=pos_fracs.to_html())
     
 
+
+@app.route("/pies")
+def get_pies():
+    dataset = request.args.get("dataset", default="celeba", type=str)
+    arch = request.args.get("arch", default="resnet18", type=str)
+    short_arch = arch
+    if arch == "resnet18":
+        short_arch = "rn18"
+    project_name = f"{dataset}-all-{short_arch}"
+    if project_name not in PROJECTS:
+        raise ValueError(f"Project {project_name} doesn't exist.")
+    threshold_adjusted = request.args.get("threshold_adjusted", default=False, type=bool)
+    rn18_runs = runs_joint.get_runs_for_project(project_name)
+    runs_df = runs_joint.make_runs_df(rn18_runs, threshold_adjusted=threshold_adjusted)
+    return(runs_df.to_html())
+
+@app.route("/interdependence")
+def get_inters():
+    dataset = request.args.get("dataset", default="celeba", type=str)
+    arch = request.args.get("arch", default="resnet18", type=str)
+    short_arch = arch
+    if arch == "resnet18":
+        short_arch = "rn18"
+    project_name = f"{dataset}-all-{short_arch}"
+    if project_name not in PROJECTS:
+        raise ValueError(f"Project {project_name} doesn't exist.")
+    threshold_adjusted = request.args.get("threshold_adjusted", default=False, type=bool)
+    rn18_runs = runs_joint.get_runs_for_project(project_name)
+    runs_df = runs_joint.compute_interdependence(rn18_runs, threshold_adjusted=threshold_adjusted)
+    return("<h1>Ability to predict one label from the others (R^2 coeff from linear regression)</h1>" + runs_df.transpose().to_html())
+
 @app.route('/runs')
 def show_runs():
     dataset = request.args.get("dataset", default="celeba", type=str)
@@ -120,7 +174,7 @@ def show_runs():
     
 
 
-    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs, threshold_adjusted=threshold_adjusted)
+    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs, arch=arch, threshold_adjusted=threshold_adjusted)
     accs = high_level[1][1]
     corrs = runs_joint.compute_cooccurrence_matrices(dataset)[0] 
 
@@ -136,8 +190,8 @@ def show_runs():
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
         print(averages_df)
-        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "Bias Amplification"),
-            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs,  metric_name = "Bias Amplification")})
+        ba_res.append({"attr": k, "table": column_df.to_html(table_id=k), "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = f"{k} Bias Amplification", arch=arch, threshold_adjusted=threshold_adjusted),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs,  metric_name = "Bias Amplification", arch=arch, threshold_adjusted=threshold_adjusted)})
 
     fpr_res = []
     for k, [df, averages_df, averages_diffs_df] in fpr_splits.items():
@@ -152,8 +206,8 @@ def show_runs():
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
         fpr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fpr-diff-{k}'),
-            "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "FPR Difference"),
-            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs = accs, corrs = corrs, metric_name = "FPR Difference")})
+            "plot_url": runs_joint.generate_metric_plot(averages_df, df, metric_name = "FPR Difference", arch=arch, threshold_adjusted=threshold_adjusted),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs = accs, corrs = corrs, metric_name = "FPR Difference", arch=arch, threshold_adjusted=threshold_adjusted)})
         #plot_url = runs_joint.generate_metric_plot(averages_df)
         #table = averages_df.to_html()
     fnr_res = []
@@ -169,8 +223,8 @@ def show_runs():
         column_df.set_index("type", inplace=True)
         column_df = column_df.transpose()
         fnr_res.append({"attr": k, "table": column_df.to_html(table_id=f'fnr-diff-{k}'),
-            "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference"),
-            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs, metric_name = "FNR Difference")})
+            "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference", arch=arch, threshold_adjusted=threshold_adjusted),
+            "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs, metric_name = "FNR Difference", arch=arch, threshold_adjusted=threshold_adjusted)})
     #return " ".join([run["group"] for run in rn18_runs if "995" in run["group"]])
     return render_template("runs.html", counts_table = counts, top_level_accs = top_level_accs.to_html(table_id = "top_level_accs"), summary_table = hls, per_attr_bas = ba_res, per_attr_fprs = fpr_res, per_attr_fnrs = fnr_res)
 
@@ -235,10 +289,11 @@ def show_a_pic():
         raise ValueError(f"Project {project_name} doesn't exist.")
     rn18_runs = runs_joint.get_runs_for_project(project_name)
     matching_runs = [r for r in rn18_runs if r['type'] == run_type]
+    print(matching_runs[0])
     found = False
     run = None
     for mr in matching_runs:
-        mr = runs_joint.load_run_details(mr)
+        mr = runs_joint.load_partial_details(mr)
         if 'test_predictions' in mr:
             found = True
             run = mr

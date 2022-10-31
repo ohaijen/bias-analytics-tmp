@@ -15,6 +15,7 @@ import base64
 import pickle as pkl
 from .projects import PROJECTS
 from sklearn import metrics
+from sklearn.linear_model import LinearRegression, LogisticRegression
 
 
 import wandb
@@ -618,7 +619,8 @@ def get_run_counts(project):
 
 
 
-def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", dataset='celeba'):
+def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", dataset='celeba',
+        arch='resnet18', threshold_adjusted=False):
     mdf = other_runs.copy()
     mdf.set_index(["strategy", "sparsity"], inplace=True)
     mdf = mdf.stack()
@@ -641,6 +643,14 @@ def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", d
         hue = 'strategy', 
         x = 'sparsity',
         y = metric_name,)
+
+    os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+    ta_suffix=""
+    if threshold_adjusted:
+        ta_suffix="_threshold_adjusted"
+    filepath = os.path.join("generated", "images", f"{dataset}_{arch}{ta_suffix}_{metric_name}_metric_plot.png")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img, format='png')
     img.seek(0)
     plt.clf()  # Forced reset for matplotlib
@@ -651,7 +661,8 @@ def generate_metric_plot(other_runs, runs, metric_name = "Bias Amplification", d
     return(plot_url)
 
 
-def generate_detailed_plot(other_runs, runs, accs, corrs,  metric_name = "Bias Amplification", dataset='celeba'):
+def generate_detailed_plot(other_runs, runs, accs, corrs,  metric_name = "Bias Amplification", dataset='celeba',
+        arch='resnet18', threshold_adjusted=False):
 
 
     mdf = other_runs.copy()
@@ -699,6 +710,13 @@ def generate_detailed_plot(other_runs, runs, accs, corrs,  metric_name = "Bias A
         #     ax = axs[i%3, i//3])
         # axs[i%3, i//3].set_title(attribute)
     plt.tight_layout()
+    os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+    ta_suffix=""
+    if threshold_adjusted:
+        ta_suffix="_threshold_adjusted"
+    filepath = os.path.join("generated", "images", f"{dataset}_{arch}{ta_suffix}_{metric_name}_detailed_plot.png")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img, format='png')
     img.seek(0)
     plt.clf()  # Forced reset for matplotlib
@@ -774,7 +792,6 @@ def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
         with open (cached_path, 'rb') as f:
             # TODO: make sure the existing parts of the run match
             run = pkl.load(f)
-            print(run.keys())
             return run
     elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
         print("RECOMPUTING")
@@ -801,8 +818,174 @@ def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
         return run
 
 
+def load_partial_details(run):
+    #dataset = preprocessed_rn18_runs[0]["dataset"]
+    dataset = 'celeba'
+    #covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
+    if 'celeba' in dataset:
+        identity_labels = celeba_identity_labels
+        attr_names = celeba_classes()
+    else:
+        identity_labels = awa_identity_labels
+        attr_names = awa_classes()
+    #attr_name = attr_names[attr]
+    return load_run_details(run, 0,0,0)
+    
+    return preprocessed_rn18_runs
 
-def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
+
+def make_runs_df(preprocessed_rn18_runs, threshold_adjusted=0):
+    dataset = preprocessed_rn18_runs[0]["dataset"]
+    covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
+    if 'celeba' in dataset:
+        identity_labels = celeba_identity_labels
+        attr_names = celeba_classes()
+    else:
+        identity_labels = awa_identity_labels
+        attr_names = awa_classes()
+    #attr_name = attr_names[attr]
+    test_labels = get_test_labels(dataset)
+    test_labels_df = pd.DataFrame(test_labels)
+    test_labels_df.reset_index(inplace=True)
+    test_labels_df.columns = ["example_id"] + [f"{attr_name}_label" for  attr_name in attr_names]
+    print("there are this many runs before compute", len(preprocessed_rn18_runs))
+    preprocessed_rn18_runs = [load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted) for run in preprocessed_rn18_runs]
+    
+    preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
+    print("there are this many runs", len(preprocessed_rn18_runs), preprocessed_rn18_runs[0].keys())
+    preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
+
+   
+    # VLook for PIEs
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        mydict = {"seed": run["name"], "type": run["type"], \
+            "strategy": run["strategy"], "sparsity": run["sparsity"]}
+        mydict["example_id"] = [i for i in range(run["test_outputs"].shape[0])]
+        for i, attr_name in enumerate(attr_names):
+            mydict[f"{attr_name}_output"] = run["test_outputs"][:,i] 
+            mydict[f"{attr_name}_prediction"] = run["test_predictions"][:,i] 
+
+            #uncertainty=np.mean(np.abs(1/(1 + np.exp(-run["test_outputs"]))-0.5) < 0.4, axis=0)
+            mydict[f"{attr_name}_prob"] = 1/(1 + np.exp(-run["test_outputs"][:,i]))
+            mydict[f"{attr_name}_uncertain"] = np.abs((mydict[f"{attr_name}_prob"]-0.5)) < 0.4
+            mydict[f"{attr_name}_very_uncertain"] = np.abs((mydict[f"{attr_name}_prob"]-0.5)) < 0.1
+        run_df = pd.DataFrame(mydict)
+        #return run_df.head(100)
+        dicts.append(run_df)
+    runs_df = pd.concat(dicts, ignore_index=True)
+    groupers = {f"{attr_name}_prediction": "mean" for attr_name in attr_names}
+    groupers = {**groupers,
+            **{f"{attr_name}_output": "mean" for attr_name in attr_names},
+            **{f"{attr_name}_prob": "mean" for attr_name in attr_names},
+            **{f"{attr_name}_uncertain": "mean" for attr_name in attr_names},
+            **{f"{attr_name}_very_uncertain": "mean" for attr_name in attr_names},
+            }
+    grouped = runs_df.groupby(['strategy', 'sparsity', 'example_id']).agg(groupers)
+    grouped.reset_index(inplace=True)
+    #raise ValueError(grouped.columns)
+    for attr_name in attr_names:
+        grouped[f'{attr_name}_prediction'] = grouped[f'{attr_name}_prediction'] > 0.5 
+        grouped[f'{attr_name}_uncertain'] = grouped[f'{attr_name}_uncertain'] > 0.5 
+        grouped[f'{attr_name}_very_uncertain'] = grouped[f'{attr_name}_very_uncertain'] > 0.5 
+    #grouped = runs_df.groupby(['strategy', 'sparsity', 'example_id'])['Blond_Hair_prediction'].agg({"Blond_Hair_prediction": ""})
+    #grouped = pd.DataFrame(grouped)
+    #grouped['Blond_Hair_prediction'] = grouped['Blond_Hair_prediction'] > 0.5
+    #print(grouped)
+    dense_grouped = grouped[grouped.sparsity==0]
+    #return(dense_grouped.head(100))
+    sp995_grouped = grouped.query("sparsity==99.5 and strategy=='GMP-RI'")
+    combined = pd.merge(dense_grouped, sp995_grouped, on='example_id')
+    uncertain = {}
+    high_level = []
+    for attr_name in attr_names:
+        if "Shadow" in attr_name:
+            continue
+        disagreements = combined.query(f"{attr_name}_prediction_x != {attr_name}_prediction_y")
+        #print(attr_name, "number of disagreements/dense uncertain/highly uncertain", len(disagreements))
+        #print("Prop. uncertain", np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.4).mean())
+        #print("Prop. very uncertain", np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.1).mean())
+        disagreements["agg_uncertain"] = np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.4)
+        disagreements["agg_very_uncertain"] = np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.1)
+        #return(disagreements.head(50))
+        annotated = pd.merge(disagreements, test_labels_df, on='example_id', how='left') 
+        #print("male label mean", annotated["Male_label"].mean(), test_labels_df["Male_label"].mean())
+        #print("young label mean", annotated["Young_label"].mean(), test_labels_df["Young_label"].mean())
+
+        high_level.append({
+            "attr_name": attr_name,
+            "pie_prop_uncertain_dense": np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.4).mean(), 
+            "pie_prop_uncertain_dense2": disagreements["agg_uncertain"].mean(), 
+            "pie_prop_very_uncertain_dense": np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.1).mean(),
+            "prop_uncertain_dense": dense_grouped[f"{attr_name}_uncertain"].mean(), 
+            "prop_very_uncertain_dense": dense_grouped[f"{attr_name}_very_uncertain"].mean(), 
+
+            "num_pies" : len(disagreements),
+            "prop_pos_to_neg" : (disagreements[f"{attr_name}_prediction_x"] > disagreements[f"{attr_name}_prediction_y"]).mean() 
+                })
+        uncertain[attr_name] = annotated
+        #uncertain[attr_name] = {"uncertain": np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.4).mean(), "very_uncertain":  np.abs((disagreements[f"{attr_name}_prob_x"] - 0.5) < 0.1).mean()}
+
+    return pd.DataFrame(high_level)
+
+
+
+def compute_interdependence(preprocessed_rn18_runs, threshold_adjusted=0):
+    dataset = preprocessed_rn18_runs[0]["dataset"]
+    covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
+    if 'celeba' in dataset:
+        identity_labels = celeba_identity_labels
+        attr_names = celeba_classes()
+    else:
+        identity_labels = awa_identity_labels
+        attr_names = awa_classes()
+    #attr_name = attr_names[attr]
+    test_labels = get_test_labels(dataset)
+    test_labels_df = pd.DataFrame(test_labels)
+    test_labels_df.reset_index(inplace=True)
+    test_labels_df.columns = ["example_id"] + [f"{attr_name}_label" for  attr_name in attr_names]
+    print("there are this many runs before compute", len(preprocessed_rn18_runs))
+    preprocessed_rn18_runs = [load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted) for run in preprocessed_rn18_runs]
+    
+    preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
+    print("there are this many runs", len(preprocessed_rn18_runs), preprocessed_rn18_runs[0].keys())
+    preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
+
+    dicts = []
+    for run in preprocessed_rn18_runs:
+        mydict = {"seed": run["name"], "type": run["type"], \
+            "strategy": run["strategy"], "sparsity": run["sparsity"]}
+        mydict["example_id"] = [i for i in range(run["test_outputs"].shape[0])]
+        for i, attr_name in enumerate(attr_names):
+            mydict[f"{attr_name}_output"] = run["test_outputs"][:,i] 
+            mydict[f"{attr_name}_prediction"] = run["test_predictions"][:,i] 
+
+            #uncertainty=np.mean(np.abs(1/(1 + np.exp(-run["test_outputs"]))-0.5) < 0.4, axis=0)
+            mydict[f"{attr_name}_prob"] = 1/(1 + np.exp(-run["test_outputs"][:,i]))
+        df = pd.DataFrame(mydict)
+        coefs = {"seed": run["name"], "type": run["type"], \
+            "strategy": run["strategy"], "sparsity": run["sparsity"]}
+        for attr_name in attr_names:
+            feature_columns = [c for c in df.columns if 'prediction' in c and attr_name not in c]
+            reg = LinearRegression().fit(df[feature_columns], df[f"{attr_name}_prediction"])
+            coefs[f"{attr_name}_score"] = reg.score(df[feature_columns], df[f"{attr_name}_prediction"])
+        dicts.append(coefs)
+    coefs = {"seed": "Labels", "type": "Labels", \
+            "strategy": "Labels", "sparsity": 0}
+    for attr_name in attr_names:
+        feature_columns = [c for c in test_labels_df.columns if attr_name not in c and "example_id" not in c]
+        reg = LinearRegression().fit(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
+        coefs[f"{attr_name}_score"] = reg.score(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
+        dicts.append(coefs)
+    dicts = pd.DataFrame(dicts).groupby(["strategy", "sparsity"]).agg("mean")
+    return dicts
+
+
+        
+
+
+
+def get_run_summaries(preprocessed_rn18_runs, arch='resnet18', threshold_adjusted=0):
     dataset = preprocessed_rn18_runs[0]["dataset"]
     covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
     if 'celeba' in dataset:
@@ -815,33 +998,12 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     test_labels = get_test_labels(dataset)
     print("there are this many runs before compute", len(preprocessed_rn18_runs))
     preprocessed_rn18_runs = [load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted) for run in preprocessed_rn18_runs]
-        # cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
-        # if False  and  os.path.exists(cached_path):
-        #     with open (cached_path, 'rb') as f:
-        #         # TODO: make sure the existing parts of the run match
-        #         preprocessed_rn18_runs[i] = pkl.load(f)
-        # elif os.path.exists(run["run_dir"] + "/" + "test_outputs.txt"):
-        #     run["test_outputs"] = np.loadtxt(run["run_dir"] + "/" + "test_outputs.txt")
-        #     run["test_predictions"] = run["test_outputs"] > 0
-        #     #run["correct"] = run["test_predictions"] == test_labels
-        #     run["sparsity"] = sparsity(run)
-        #     run["strategy"] = strategy(run)
-        #     run['type'] = desc(run)
-        #     compute_bas(run, test_labels, pos_fracs_df, neg_fracs_df)
-        #     compute_errors(run, test_labels)
-        #     with open (cached_path, 'wb') as f:
-        #         pkl.dump(run, f)
-        # else:
-        #     print(f"run {run['group']} has no test outputs! {cached_path}")
-        #     continue
     
     preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
     print("there are this many runs", len(preprocessed_rn18_runs), preprocessed_rn18_runs[0].keys())
     preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
 
-
-    
-
+   
     # AUC
     highlevels = []
     dicts = []
@@ -860,6 +1022,8 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     high_level_auc_df = averages_df.transpose()
     highlevels.append(["auc", high_level_auc_df])
     top_level_aucs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+    top_level_aucs.columns = ["AUC"]
+    
 
     dicts = []
     for run in preprocessed_rn18_runs:
@@ -876,6 +1040,7 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     high_level_acc_df = averages_df.transpose()
     highlevels.append(["acc", high_level_acc_df])
     top_level_accuracies = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+    top_level_accuracies.columns = ["Accuracy"]
 
     dicts = []
     for run in preprocessed_rn18_runs:
@@ -925,6 +1090,8 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     averages_df = df.groupby("type").mean()
     high_level_predpos_df = averages_df.transpose()
     highlevels.append(["predpos", high_level_predpos_df])
+    top_level_predposs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+    top_level_predposs.columns = ["Predicted Positive %"]
 
 
     dicts = []
@@ -941,6 +1108,8 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     averages_df = df.groupby("type").mean()
     high_level_uncertainty_df = averages_df.transpose()
     highlevels.append(["uncertainty", high_level_uncertainty_df])
+    top_level_uncertainties = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+    top_level_uncertainties.columns = ["Uncertain %"]
 
     dicts = []
     for run in preprocessed_rn18_runs:
@@ -956,8 +1125,9 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
     averages_df = df.groupby("type").mean()
     high_level_high_uncertainty_df = averages_df.transpose()
     highlevels.append(["high_uncertainty", high_level_high_uncertainty_df])
+    top_level_high_uncertainties = pd.DataFrame(df.groupby("type").mean().transpose().mean())
+    top_level_high_uncertainties.columns = ["High Uncertain %"]
 
-    top_level_predposs = pd.DataFrame(df.groupby("type").mean().transpose().mean())
 
 
 
@@ -1031,12 +1201,18 @@ def get_run_summaries(preprocessed_rn18_runs, threshold_adjusted=0):
         cols = [c for c in averages_df.columns if c.startswith(identity_label_name)]
         averages_diffs_df = averages_df[cols] / averages_df[cols].iloc[0]
         fnr_dicts[identity_label_name] = [df, averages_df, averages_diffs_df]  
+
+    combined_df = pd.merge(top_level_aucs, top_level_accuracies, left_index=True, right_index=True)
+    combined_df = pd.merge(combined_df, top_level_predposs, left_index=True, right_index=True)
+    combined_df = pd.merge(combined_df, top_level_uncertainties, left_index=True, right_index=True)
+    combined_df = pd.merge(combined_df, top_level_high_uncertainties, left_index=True, right_index=True)
+    ta_suffix=""
+    if threshold_adjusted:
+        ta_suffix="_threshold_adjusted"
+    os.makedirs(os.path.join("generated", "tables"), exist_ok=True)
+    filepath = os.path.join("generated", "tables", f"top_level_{dataset}_{arch}{ta_suffix}.tex")
+    filepath = filepath.replace(" ", "-")
+    combined_df.to_latex(filepath)
     return top_level_accuracies, highlevels, ba_dicts, fpr_dicts, fnr_dicts
 
-
-def compute_worst(ba_dicts):
-    df, averages_df, averages_diffs_df = ba_dicts["Male"]
-    #return df
-    return averages_df
-    #average_diffs_dfs.sort_values(by=""
 
