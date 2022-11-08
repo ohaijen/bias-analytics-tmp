@@ -537,8 +537,8 @@ def get_test_labels():
         "valid": 1,
         "test": 2,
     }
-    splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
-    labels = pd.read_csv("/home/Datasets/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
+    splits = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
+    labels = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
     labels = labels[ splits.ravel()==2]
     return labels>0
 
