@@ -61,8 +61,8 @@ def get_test_labels(dset, val = False):
         "test": 2,
     }
     if 'celeba' in dset:
-        splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
-        labels = pd.read_csv("/home/Datasets/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
+        splits = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
+        labels = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
         if val:
             labels = labels[ splits.ravel()==1]
         else:
@@ -71,16 +71,16 @@ def get_test_labels(dset, val = False):
     elif 'awa' in dset:
         if val:
             return get_train_labels(dset)
-        predicates_file = os.path.join("/home/Datasets/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
+        predicates_file = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
         predicates_mtx = np.loadtxt(predicates_file)
-        classes = pd.read_csv("/home/Datasets/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
+        classes = pd.read_csv("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
         classes.columns = ["id", "klass"]
         ccs = classes.reset_index().set_index("klass")
-        ood_image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "ood_images")
+        ood_image_dir = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "ood_images")
         ood_classes = os.listdir(ood_image_dir)
         ood_classes.sort()
 
-        images_folder = "/home/Datasets/Animals_with_Attributes2/ood_images/"
+        images_folder = "gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/ood_images/"
         images_subfolders = os.listdir(images_folder)
         images_subfolders.sort()
         class_attributes = []
@@ -104,18 +104,18 @@ def get_train_labels(dset):
         "test": 2,
     }
     if 'celeba' in dset:
-        splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
-        labels = pd.read_csv("/home/Datasets/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
+        splits = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_eval_partition.txt", delim_whitespace=True, header=None, index_col=0).to_numpy()
+        labels = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_attr_celeba.txt", delim_whitespace=True, header=1).to_numpy()
         labels = labels[ splits.ravel()==0]
         return labels>0
     elif 'awa' in dset:
-        predicates_file = os.path.join("/home/Datasets/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
+        predicates_file = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "predicate-matrix-binary.txt")
         predicates_mtx = np.loadtxt(predicates_file)
-        classes = pd.read_csv("/home/Datasets/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
+        classes = pd.read_csv("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/classes.txt", sep="\t", header=None)
         classes.columns = ["id", "klass"]
         ccs = classes.reset_index().set_index("klass")
         print(classes)
-        image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "train_images")
+        image_dir = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "train_images")
         id_classes = os.listdir(image_dir)
         id_classes.sort()
         #predicates_mtx = predicates_mtx[ccs.loc[id_classes]["index"].values]
@@ -144,17 +144,17 @@ def get_test_image_ids(dset):
         "test": 2,
     }
     if 'celeba' in dset:
-        splits = pd.read_csv("/home/Datasets/celeba/list_eval_partition.txt", delim_whitespace=True, header=None)
+        splits = pd.read_csv("gdrive/MyDrive/emergency_backup/celeba/list_eval_partition.txt", delim_whitespace=True, header=None)
         splits.columns = ["img_ids", "split"]
         img_ids  = splits["img_ids"].to_numpy().ravel()[splits['split'].ravel()==2]
         return img_ids
     elif 'awa' in dset:
         img_ids = []
-        ood_image_dir = os.path.join("/home/Datasets/Animals_with_Attributes2/", "ood_images")
+        ood_image_dir = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "ood_images")
         ood_classes = os.listdir(ood_image_dir)
         ood_classes.sort()
         for k in ood_classes:
-            image_urls = os.path.join("/home/Datasets/Animals_with_Attributes2/", "ood_images", k)
+            image_urls = os.path.join("gdrive/MyDrive/emergency_backup/Animals_with_Attributes2/", "ood_images", k)
             image_urls.sort()
             img_ids.extend(image_urls)
         return img_ids
@@ -782,7 +782,8 @@ def get_thresholds(outputs, labels):
     
 
 def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
-    print(run["run_dir"])
+    if 'backup' not in run["run_dir"]:
+      run["run_dir"] = os.path.join("gdrive/MyDrive/emergency_backup", run["run_dir"][1:])
     test_labels = get_test_labels(run["dataset"])
     cached_path = os.path.join(run["run_dir"], "run_stats.pkl")
     if threshold_adjusted:
@@ -815,6 +816,7 @@ def load_run_details(run, pos_fracs_df, neg_fracs_df, threshold_adjusted=False):
             pkl.dump(run, f)
         return run
     else:
+        print("no outputs for run", run["run_dir"])
         return run
 
 
@@ -979,8 +981,6 @@ def compute_interdependence(preprocessed_rn18_runs, arch, threshold_adjusted=0):
         reg = LinearRegression().fit(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
         coefs[f"{attr_name}_score"] = reg.score(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
         dicts.append(coefs)
-
-
 
     dicts = pd.DataFrame(dicts)    
     
@@ -1311,4 +1311,5 @@ def get_run_summaries(preprocessed_rn18_runs, arch='resnet18', threshold_adjuste
     filepath = filepath.replace(" ", "-")
     combined_df.round(decimals=2).to_latex(filepath)
     return top_level_accuracies, highlevels, ba_dicts, fpr_dicts, fnr_dicts, pred_distr_plots
+
 
