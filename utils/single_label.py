@@ -712,6 +712,8 @@ def get_run_counts(project):
 
 
 def load_run_details(run, test_labels, pos_fracs_df, neg_fracs_df,  best=True):
+    if 'backup' not in run["run_dir"]:
+      run["run_dir"] = os.path.join("gdrive/MyDrive/emergency_backup", run["run_dir"][1:])
     if test_labels is None:
         test_labels = get_test_labels()
     if best:
