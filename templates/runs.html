@@ -54,4 +54,9 @@ Results for run training all binary attributes together.
 	<img src="data:image/png;base64,{{res['detail_plot_url']}}"></img>
 	{{res['table'] | safe}}
 	{%endfor%}
+
+	{%for plot_url  in pred_distr_plots%}
+	<img src="data:image/png;base64,{{plot_url}}"></img>
+	{%endfor%}
+
 {% endblock %} 

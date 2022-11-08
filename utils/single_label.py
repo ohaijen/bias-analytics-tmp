@@ -285,19 +285,39 @@ metrics_dict = {
     "acc": "Accuracy"
 }
 
-# def plot_metric(runs, metric, attr, ax):
-#     attr_name = celeba_classes()[attr]
-#     grouped_runs = {}
-#     for r in runs:
-#         if r["strategy"]+"+"+str(r["sparsity"]) in grouped_runs:
-#             grouped_runs[r["strategy"]+"+"+str(r["sparsity"])].append(r[f"{attr_name}-{metric}"])
-#         else:
-#             grouped_runs[r["strategy"]+"+"+str(r["sparsity"])] = [r[f"{attr_name}-{metric}"]]
-#     for k, v in grouped_runs.items():
-#         grouped_runs[k] = np.nanmean(v, axis=0)
-#     y= np.array([v for v in grouped_runs.values()])
-#     x= np.array([np.tile(np.array(k), 40) for k in grouped_runs.keys()])
-#     sns.boxplot(x.ravel(),y.ravel(), ax=ax).set_title(attr_name)
+
+def plot_pred_distribution(runs, attr, backdoor=False):
+    dicts = []
+    for run in runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["sparsity"]}
+        mydict["example_id"] = np.arange(run["test_outputs"].shape[0])
+        mydict[attr] = 1/(1 + np.exp(-run["test_outputs"]))
+        df = pd.DataFrame.from_dict(mydict)
+        dicts.append(df)
+    df = pd.concat(dicts)
+    averages_df = df.groupby(["type", "example_id"]).mean()
+    averages_df.reset_index(inplace=True)
+
+
+    plot_urls = []
+    img = io.BytesIO()
+    fig, axs = plt.subplots(1, 1, figsize=(8, 4))
+    sns.histplot(data=averages_df, x=attr, hue="type", bins=10, stat='percent', ax=axs).set_title(f"{attr} Prediction Distribution")
+    plt.tight_layout()
+    plt.savefig(img, format='png')
+    os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+    backdoor_suffix = ""
+    if backdoor:
+        backdoor_suffix = "_backdoor"
+    filepath = os.path.join("generated", "images", f"single_label{backdoor_suffix}_{attr}_logit_distribution.pdf")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
+    img.seek(0)
+    plt.clf()  # Forced reset for matplotlib
+    plot_url = base64.b64encode(img.getvalue()).decode()
+    return(plot_url)
     
     
 def plot_metric_single(runs, metric, ax, attr=None, backdoor=False):
@@ -730,13 +750,15 @@ def get_run_summaries(runs, dataset, backdoor):
         runs[attr] = [v for v in runs[attr] if 'test_outputs' in v]
         print("there are this many runs for ", attr,  len(runs[attr]))
     accs = {}
+    grouped_dfs = {}
     for attr, rs in runs.items():
         df = pd.DataFrame(rs)
         if backdoor:
             df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"acc": "mean"})
         else:
             df = df.groupby(["sparsity", "strategy"]).agg({"acc": "mean"})
-        df.columns = ["count"]
+        #df.columns = ["count"]
+        grouped_dfs[attr] = df
         df = df.reset_index()
         if backdoor:
             accs[attr] = df.pivot(columns=["strategy", "backdoor_type"], index=["sparsity"])
@@ -750,7 +772,8 @@ def get_run_summaries(runs, dataset, backdoor):
             df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"fpr": "mean"})
         else:
             df = df.groupby(["sparsity", "strategy"]).agg({"fpr": "mean"})
-        df.columns = ["count"]
+        #df.columns = ["count"]
+        grouped_dfs[attr] = pd.merge(grouped_dfs[attr], df, left_index=True, right_index=True)
         df = df.reset_index()
         if backdoor:
             fprs[attr] = df.pivot(columns=["strategy", "backdoor_type"], index=["sparsity"])
@@ -763,12 +786,32 @@ def get_run_summaries(runs, dataset, backdoor):
             df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"fnr": "mean"})
         else:
             df = df.groupby(["sparsity", "strategy"]).agg({"fnr": "mean"})
-        df.columns = ["count"]
+        #df.columns = ["count"]
+        grouped_dfs[attr] = pd.merge(grouped_dfs[attr], df, left_index=True, right_index=True)
         df = df.reset_index()
         if backdoor:
             fnrs[attr] = df.pivot(columns=["strategy", "backdoor_type"], index=["sparsity"])
         else:
             fnrs[attr] = df.pivot(columns=["strategy"], index=["sparsity"])
+    # if not backdoor:
+    #     #raise ValueError(runs)
+    #     for attr, rs in runs.items():
+    #         for pa in identity_labels:
+    #             bas = {}
+    #             df = pd.dataframe(rs)
+    #             df = df.groupby(["sparsity", "strategy"]).agg({f"{pa}-bas": "mean"})
+    #             #df.columns = ["count"]
+    #             grouped_dfs[attr] = pd.merge(grouped_dfs[attr], df, left_index=true, right_index=true)
+    #             df = df.reset_index()
+    #             bas[f'{attr}-{pa}'] = df.pivot(columns=["strategy"], index=["sparsity"])
+    # else:
+    #     for attr, rs in runs.items():
+    #         bas = {}
+    #         df = pd.DataFrame(rs)
+    #         df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"Backdoor-bas": "mean"})
+    #         grouped_dfs[attr] = pd.merge(grouped_dfs[attr], df, left_index=True, right_index=True)
+    #         df = df.reset_index()
+    #         bas[attr] = df.pivot(columns=["strategy", "backdoor_type"], index=["sparsity"])
     pred_poss = {}
     for attr, rs in runs.items():
         df = pd.DataFrame(rs)
@@ -776,17 +819,28 @@ def get_run_summaries(runs, dataset, backdoor):
             df = df.groupby(["sparsity", "strategy", "backdoor_type"]).agg({"pred_pos": "mean"})
         else:
             df = df.groupby(["sparsity", "strategy"]).agg({"pred_pos": "mean"})
-        df.columns = ["count"]
+        #df.columns = ["count"]
+        grouped_dfs[attr] = pd.merge(grouped_dfs[attr], df, left_index=True, right_index=True)
         df = df.reset_index()
         if backdoor:
             pred_poss[attr] = df.pivot(columns=["strategy", "backdoor_type"], index=["sparsity"])
         else:
             pred_poss[attr] = df.pivot(columns=["strategy"], index=["sparsity"])
+
+    os.makedirs(os.path.join("generated", "tables"), exist_ok=True)
+    suffix = "single_label"
+    if backdoor:
+        suffix = f"single_label_backdoor"
+    for k, v in grouped_dfs.items():
+        filepath = os.path.join("generated", "tables", f"high_level_{suffix}_celeba_resnet18_{k}.tex")
+        filepath = filepath.replace(" ", "-")
+        v.round(decimals=2).to_latex(filepath)
     return runs, accs, fprs, fnrs, pred_poss
 
     
 ##### Ghis is the one
 def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
+    dataset = 'celeba'
     labels = identity_labels
     if backdoor:
         labels = backdoor_types
@@ -810,6 +864,11 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
     # It would be cleaner to pass the "backdooor" explicitly.
     backdoor = 'backdoor_test' in next(iter(runs.values()))[0]
     
+    os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+    metric_name = "fpr"
+    suffix = "single_label"
+    if backdoor:
+        suffix = "backdoor_single_label"
     # plot the metrics (FPR, FNR, ACC sparse / dense)
     img_fpr = io.BytesIO()
     if backdoor:
@@ -823,6 +882,9 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
             facet_plot_fn(runs[attr], 'fpr', idd, axs1[i//2, i % 2], backdoor=backdoor)
     fig1.suptitle(f'FPR{title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
+    filepath = os.path.join("generated", "images", f"{suffix}_{dataset}_{attr}_{metric_name}_plot.pdf")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img_fpr, format='png')
     img_fpr.seek(0)
     plt.clf()
@@ -841,6 +903,10 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
             facet_plot_fn(runs[attr], 'fnr', idd, axs1[i//2, i % 2], backdoor=backdoor)
     fig1.suptitle(f'FnR{title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
+    metric_name = 'fnr'
+    filepath = os.path.join("generated", "images", f"{suffix}_{dataset}_{attr}_{metric_name}_plot.pdf")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img_fnr, format='png')
     img_fnr.seek(0)
     plt.clf()
@@ -858,6 +924,10 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
             facet_plot_fn(runs[attr], 'acc', idd, axs1[i//2, i % 2], backdoor=backdoor)
     fig1.suptitle(f'Acc {title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
+    metric_name = 'acc'
+    filepath = os.path.join("generated", "images", f"{suffix}_{dataset}_{attr}_{metric_name}_plot.pdf")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img_acc, format='png')
     img_acc.seek(0)
     plt.clf()
@@ -875,12 +945,18 @@ def plot_single_label_metrics(runs, attr, backdoor=False, relative=False):
             plot_metric_single(runs[attr], "bas", axs1[i//2, i % 2], idd, backdoor=backdoor)
     fig1.suptitle(f'Bias Amplification {title_clause} ({get_nice_attr_name(attr)})')    
     plt.tight_layout()
+    metric_name = 'ba'
+    filepath = os.path.join("generated", "images", f"{suffix}_{dataset}_{attr}_{metric_name}_plot.pdf")
+    filepath = filepath.replace(" ", "-")
+    plt.savefig(filepath)
     plt.savefig(img_ba, format='png')
     img_ba.seek(0)
     plt.clf()
     plot_ba_url = base64.b64encode(img_ba.getvalue()).decode()
-    return plot_ba_url, plot_fpr_url, plot_fnr_url, plot_acc_url
-    return plot_fpr_url, plot_fpr_url, plot_fpr_url, plot_fpr_url
+
+    plot_pred_distr_url = plot_pred_distribution(runs[attr], attr, backdoor)
+    
+    return plot_ba_url, plot_fpr_url, plot_fnr_url, plot_acc_url, plot_pred_distr_url
     
 
 def plot_combined_runs_metrics(runs, attr):

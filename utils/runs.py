@@ -930,7 +930,7 @@ def make_runs_df(preprocessed_rn18_runs, threshold_adjusted=0):
 
 
 
-def compute_interdependence(preprocessed_rn18_runs, threshold_adjusted=0):
+def compute_interdependence(preprocessed_rn18_runs, arch, threshold_adjusted=0):
     dataset = preprocessed_rn18_runs[0]["dataset"]
     covs_df, pos_fracs_df, neg_fracs_df = compute_cooccurrence_matrices(dataset)
     if 'celeba' in dataset:
@@ -953,6 +953,8 @@ def compute_interdependence(preprocessed_rn18_runs, threshold_adjusted=0):
 
     dicts = []
     for run in preprocessed_rn18_runs:
+        if "test_outputs" not in run:
+            continue
         mydict = {"seed": run["name"], "type": run["type"], \
             "strategy": run["strategy"], "sparsity": run["sparsity"]}
         mydict["example_id"] = [i for i in range(run["test_outputs"].shape[0])]
@@ -977,11 +979,105 @@ def compute_interdependence(preprocessed_rn18_runs, threshold_adjusted=0):
         reg = LinearRegression().fit(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
         coefs[f"{attr_name}_score"] = reg.score(test_labels_df[feature_columns], test_labels_df[f"{attr_name}_label"])
         dicts.append(coefs)
-    dicts = pd.DataFrame(dicts).groupby(["strategy", "sparsity"]).agg("mean")
-    return dicts
 
 
-        
+
+    dicts = pd.DataFrame(dicts)    
+    
+    plot_urls = []
+    avg_increases = []
+    for attribute in dicts.columns:
+        if 'score' not in attribute:
+            continue
+        att_dict = dicts[dicts.type != "Labels"].copy()
+        att_dict.reset_index(inplace=True)
+        att_dict.sparsity = att_dict.sparsity.astype(str)
+        mean_dense_interdependence = att_dict[att_dict.type=='0-Dense'][attribute].mean()
+        types = att_dict.type.unique()
+        max_mean_sparse_interdependence = mean_dense_interdependence
+        for type in types:
+            mean_sparse_interdependence = att_dict[att_dict.type=='99-GMP-RI'][attribute].mean()
+            if mean_sparse_interdependence > max_mean_sparse_interdependence:
+                max_mean_sparse_interdependence = mean_sparse_interdependence
+        #raise ValueError((mean_dense_interdependence, mean_sparse_interdependence))
+        avg_increases.append(max_mean_sparse_interdependence/mean_dense_interdependence)
+
+        img = io.BytesIO()
+        sns.lineplot(data = att_dict,
+            hue = 'strategy', 
+            x = 'sparsity',
+            y = attribute,)
+
+        os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+        # ta_suffix=""
+        # if threshold_adjusted:
+        #     ta_suffix="_threshold_adjusted"
+        # filepath = os.path.join("generated", "images", f"{dataset}_{arch}{ta_suffix}_{metric_name}_metric_plot.png")
+        # filepath = filepath.replace(" ", "-")
+        # plt.savefig(filepath)
+        plt.suptitle(attribute[:-6] + " - " + f"{round(max_mean_sparse_interdependence/mean_dense_interdependence, 2)}")
+        plt.savefig(img, format='png')
+        img.seek(0)
+        plt.clf()  # Forced reset for matplotlib
+
+        plot_urls.append(base64.b64encode(img.getvalue()).decode())
+    
+    sorted_indices = np.flip(np.argsort(avg_increases))
+    plot_urls = [plot_urls[i] for i in sorted_indices]
+
+    dicts = dicts.groupby(["strategy", "sparsity"]).agg("mean")
+    os.makedirs(os.path.join("generated", "tables"), exist_ok=True)
+    ta_suffix=""
+    if threshold_adjusted:
+        ta_suffix="_threshold_adjusted"
+    filepath = os.path.join("generated", "tables", f"interdependence_{dataset}_{arch}{ta_suffix}.tex")
+    filepath = filepath.replace(" ", "-")
+    dicts.round(decimals=2).to_latex(filepath)
+    
+
+    return dicts, plot_urls
+
+
+def plot_pred_distribution(runs, dataset, arch):
+    if 'celeba' in dataset:
+        attrs = celeba_classes()
+    elif 'awa' in dataset:
+        attrs = awa_classes()
+    else:
+        raise ValueError(f"unknown dataset {dataset}!")
+
+    dicts = []
+    for run in runs:
+        if "test_outputs" not in run:
+            continue
+        mydict = {"seed": run["name"], "type": run["sparsity"]}
+        mydict["example_id"] = np.arange(run["test_outputs"].shape[0])
+        for i, attr_name in enumerate(attrs):
+            label = attr_name
+            mydict[label] = 1/(1 + np.exp(-run["test_outputs"][:, i]))
+        df = pd.DataFrame.from_dict(mydict)
+        dicts.append(df)
+    df = pd.concat(dicts)
+    averages_df = df.groupby(["type", "example_id"]).mean()
+    averages_df.reset_index(inplace=True)
+
+
+    os.makedirs(os.path.join("generated", "images"), exist_ok=True)
+    plot_urls = []
+    for attr_name in attrs:
+        img = io.BytesIO()
+        fig, axs = plt.subplots(1, 1, figsize=(8, 4))
+        sns.histplot(data=averages_df, x=attr_name, hue="type", bins=10, ax=axs).set_title(f"{attr_name} Prediction Distribution")
+        plt.tight_layout()
+        plt.savefig(img, format='png')
+        filepath = os.path.join("generated", "images", f"{dataset}_{arch}_{attr_name}_logit_distribution.pdf")
+        filepath = filepath.replace(" ", "-")
+        plt.savefig(filepath)
+        img.seek(0)
+        plt.clf()  # Forced reset for matplotlib
+        plot_url = base64.b64encode(img.getvalue()).decode()
+        plot_urls.append(plot_url)
+    return(plot_urls)
 
 
 
@@ -1002,6 +1098,7 @@ def get_run_summaries(preprocessed_rn18_runs, arch='resnet18', threshold_adjuste
     preprocessed_rn18_runs = [v for v in preprocessed_rn18_runs if 'strategy' in v]
     print("there are this many runs", len(preprocessed_rn18_runs), preprocessed_rn18_runs[0].keys())
     preprocessed_rn18_runs.sort(key=lambda r: (r["sparsity"], r["group"]))
+    pred_distr_plots = plot_pred_distribution(preprocessed_rn18_runs, dataset, arch)
 
    
     # AUC
@@ -1212,7 +1309,6 @@ def get_run_summaries(preprocessed_rn18_runs, arch='resnet18', threshold_adjuste
     os.makedirs(os.path.join("generated", "tables"), exist_ok=True)
     filepath = os.path.join("generated", "tables", f"top_level_{dataset}_{arch}{ta_suffix}.tex")
     filepath = filepath.replace(" ", "-")
-    combined_df.to_latex(filepath)
-    return top_level_accuracies, highlevels, ba_dicts, fpr_dicts, fnr_dicts
-
+    combined_df.round(decimals=2).to_latex(filepath)
+    return top_level_accuracies, highlevels, ba_dicts, fpr_dicts, fnr_dicts, pred_distr_plots
 

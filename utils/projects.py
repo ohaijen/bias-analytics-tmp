@@ -23,14 +23,14 @@ PROJECTS = {
             "backdoor": False,
             "combined": False
             },
-        "celeba-single-mobilenet":{
-            "wandb_project": "celeba_mobilenet_bias_single_label",
-            "dset": "celeba",
-            "arch": "mobilenet",
-            "labels": ["Blond", "Smiling"],
-            "backdoor": False,
-            "combined": False
-            },
+        # "celeba-single-mobilenet":{
+        #     "wandb_project": "celeba_mobilenet_bias_single_label",
+        #     "dset": "celeba",
+        #     "arch": "mobilenet",
+        #     "labels": ["Blond", "Smiling"],
+        #     "backdoor": False,
+        #     "combined": False
+        #     },
         "celeba-backdoor-single-rn18":{
             "wandb_project": "celeba_rn18_backdoor_bias_single_label",
             "dset": "celeba",
@@ -47,14 +47,14 @@ PROJECTS = {
             "backdoor": False,
             "combined": True
             },
-        "celeba-backdoor-single-mobilenet":{
-            "wandb_project": "celeba_mobilenet_backdoor_bias_single_label",
-            "dset": "celeba",
-            "arch": "mobilenet",
-            "labels": ["Blond", "Smiling"],
-            "backdoor": True,
-            "combined": False
-            },
+        # "celeba-backdoor-single-mobilenet":{
+        #     "wandb_project": "celeba_mobilenet_backdoor_bias_single_label",
+        #     "dset": "celeba",
+        #     "arch": "mobilenet",
+        #     "labels": ["Blond", "Smiling"],
+        #     "backdoor": True,
+        #     "combined": False
+        #     },
         "full_celeba-all-rn18":{
             "wandb_project": "full_celeba_rn18_bias",
             "dset": "full_celeba",
@@ -63,14 +63,14 @@ PROJECTS = {
             "backdoor": False,
             "combined": False
             },
-        "full_celeba-all-mobilenet":{
-            "wandb_project": "celeba_mobilenet_bias",
-            "dset": "full_celeba",
-            "arch": "mobilenet",
-            "labels": "all",
-            "backdoor": False,
-            "combined": False
-            },
+        # "full_celeba-all-mobilenet":{
+        #     "wandb_project": "celeba_mobilenet_bias",
+        #     "dset": "full_celeba",
+        #     "arch": "mobilenet",
+        #     "labels": "all",
+        #     "backdoor": False,
+        #     "combined": False
+        #     },
         "awa-all-rn18":{
             "wandb_project": "awa40_rn18_bias",
             "dset": "awa2",
@@ -79,14 +79,22 @@ PROJECTS = {
             "backdoor": False,
             "combined": False
             },
-        "awa-all-mobilenet":{
-            "wandb_project": "awa40_mobilenet_bias",
-            "dset": "awa2",
-            "arch": "mobilenet",
+        "waterbirds-rn18":{
+            "wandb_project": "waterbirds_rn18_bias",
+            "dset": "waterbirds",
+            "arch": "resnet18",
             "labels": "all",
             "backdoor": False,
             "combined": False
             },
+        # "awa-all-mobilenet":{
+        #     "wandb_project": "awa40_mobilenet_bias",
+        #     "dset": "awa2",
+        #     "arch": "mobilenet",
+        #     "labels": "all",
+        #     "backdoor": False,
+        #     "combined": False
+        #     },
 
         }
 

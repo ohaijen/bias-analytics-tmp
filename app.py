@@ -154,8 +154,9 @@ def get_inters():
         raise ValueError(f"Project {project_name} doesn't exist.")
     threshold_adjusted = request.args.get("threshold_adjusted", default=False, type=bool)
     rn18_runs = runs_joint.get_runs_for_project(project_name)
-    runs_df = runs_joint.compute_interdependence(rn18_runs, threshold_adjusted=threshold_adjusted)
-    return("<h1>Ability to predict one label from the others (R^2 coeff from linear regression)</h1>" + runs_df.transpose().to_html())
+    runs_df, plot_urls = runs_joint.compute_interdependence(rn18_runs, arch=arch, threshold_adjusted=threshold_adjusted)
+    plot_urls_string = "".join([f'<img src="data:image/png;base64,{plot_url}"></img>' for plot_url in plot_urls])
+    return("<h1>Ability to predict one label from the others (R^2 coeff from linear regression)</h1>" + runs_df.transpose().to_html() + plot_urls_string)
 
 @app.route('/runs')
 def show_runs():
@@ -174,7 +175,8 @@ def show_runs():
     
 
 
-    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits = runs_joint.get_run_summaries(rn18_runs, arch=arch, threshold_adjusted=threshold_adjusted)
+    pred_distr_plots = runs_joint.get_run_summaries(rn18_runs, arch=arch, threshold_adjusted=threshold_adjusted)
+    top_level_accs, high_level, ba_splits, fpr_splits, fnr_splits, pred_distr_plots = runs_joint.get_run_summaries(rn18_runs, arch=arch, threshold_adjusted=threshold_adjusted)
     accs = high_level[1][1]
     corrs = runs_joint.compute_cooccurrence_matrices(dataset)[0] 
 
@@ -226,7 +228,7 @@ def show_runs():
             "plot_url": runs_joint.generate_metric_plot(averages_df, df,  metric_name = "FNR Difference", arch=arch, threshold_adjusted=threshold_adjusted),
             "detail_plot_url": runs_joint.generate_detailed_plot(averages_df, df, accs=accs, corrs = corrs, metric_name = "FNR Difference", arch=arch, threshold_adjusted=threshold_adjusted)})
     #return " ".join([run["group"] for run in rn18_runs if "995" in run["group"]])
-    return render_template("runs.html", counts_table = counts, top_level_accs = top_level_accs.to_html(table_id = "top_level_accs"), summary_table = hls, per_attr_bas = ba_res, per_attr_fprs = fpr_res, per_attr_fnrs = fnr_res)
+    return render_template("runs.html", counts_table = counts, top_level_accs = top_level_accs.to_html(table_id = "top_level_accs"), summary_table = hls, per_attr_bas = ba_res, per_attr_fprs = fpr_res, per_attr_fnrs = fnr_res, pred_distr_plots = pred_distr_plots)
 
 
 
@@ -256,6 +258,7 @@ def show_single_runs():
             plots[attr] = runs_sl.plot_combined_runs_metrics(runs, attr)
         else:
             plots[attr] = runs_sl.plot_single_label_metrics(runs, attr, backdoor=backdoor)
+
 
     return render_template("single_runs.html", 
             run_counts= {k: v.to_html(table_id=f"{k}_counts") for k, v in runs_sl.get_run_counts(project_name).items()},
